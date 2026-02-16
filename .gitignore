@@ -1,0 +1,43 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.exe
+*.out
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+.idea/
+*.user
+build/
+
+# Executables
+smart-speaker-server/test_app
+smart-speaker-server/test_client
+smart-speaker-server/server_smart_speaker
+
+# Rust/Cargo
+.cargo/
+.rustup/
+target/
+Cargo.lock
+
+# User files
+.zsh_history
+.zshrc
+.zshenv
+.zcompdump*
+.viminfo
+.ssh/
+.keychain/
+.npm/
+.local/
+.trae*/
+.vscode-server/
+Rust/
+ai_completion/
+.wget-hsts
+.xscreensaver
+.sudo_as_admin_successful

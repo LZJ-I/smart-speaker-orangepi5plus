@@ -1,0 +1,6 @@
+[submodule "smart-speaker-client/3rdparty/git-sherpa-onnx"]
+	path = smart-speaker-client/3rdparty/git-sherpa-onnx
+	url = https://github.com/k2-fsa/sherpa-onnx.git
+[submodule "smart-speaker-client/3rdparty/Matcha-TTS"]
+	path = smart-speaker-client/3rdparty/Matcha-TTS
+	url = https://github.com/shivammehta25/Matcha-TTS.git

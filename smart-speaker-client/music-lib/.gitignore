@@ -1,0 +1,5 @@
+/target
+examples/music_search
+examples/music_download
+examples/music_search_and_download
+examples/music_url

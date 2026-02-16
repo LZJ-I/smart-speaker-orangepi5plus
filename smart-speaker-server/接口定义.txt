@@ -1,0 +1,129 @@
+1. 嵌入式端 上报信息
+当前歌手、当前歌曲、、当前模式、当前状态、当前设备、当前音量
+嵌入式端发送给服务器：{ "cmd": "device_report", "cur_singer": "未知歌手", "cur_music": "稻香-周杰伦.mp3", "cur_mode": 0, "state": "play", "deviceid": "0001", "cur_volume": 78 }
+服务器返回：....
+
+1. APP 上报信息
+{ "cmd": "app_report", "appid":"0001", "deviceid":"0001"}
+服务器返回：....
+
+2. 嵌入式端 向服务器获取播放列表
+嵌入式端发送给服务器：{ "cmd": "get_music", "singer: "其他"}
+服务器返回：{ "cmd": "reply_music", "music":["其他/1.MP3","其他/2.MP3","其他/3.MP3"]}
+
+3. APP 向服务器 请求开始播放
+APP发送给服务器: { "cmd": "app_start_play"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_start_play", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_start_play"}
+音箱返回给服务器: { "cmd": "reply_app_start_play", "result": "success"}      { "cmd": "reply_app_start_play", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_start_play", "result": "success"}      { "cmd": "reply_app_start_play", "result": "failure"} 
+
+4. APP 向服务器 请求结束播放
+APP发送给服务器: { "cmd": "app_stop_play"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_stop_play", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_stop_play"}
+音箱返回给服务器: { "cmd": "reply_app_stop_play", "result": "success"}      { "cmd": "reply_app_stop_play", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_stop_play", "result": "success"}      { "cmd": "reply_app_stop_play", "result": "failure"} 
+
+5. APP 向服务器 请求暂停播放
+APP发送给服务器: { "cmd": "app_suspend_play"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_suspend_play", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_suspend_play"}
+音箱返回给服务器: { "cmd": "reply_app_suspend_play", "result": "success"}      { "cmd": "reply_app_suspend_play", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_suspend_play", "result": "success"}      { "cmd": "reply_app_suspend_play", "result": "failure"} 
+
+6. APP 向服务器 请求继续播放
+APP发送给服务器: { "cmd": "app_continue_play"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_continue_play", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_continue_play"}
+音箱返回给服务器: { "cmd": "reply_app_continue_play", "result": "success"}      { "cmd": "reply_app_continue_play", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_continue_play", "result": "success"}      { "cmd": "reply_app_continue_play", "result": "failure"} 
+
+7. APP 向服务器 请求下一首歌
+APP发送给服务器: { "cmd": "app_play_next_song"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_play_next_song", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_play_next_song"}
+音箱返回给服务器: { "cmd": "reply_app_play_next_song", "result": "success"}      { "cmd": "reply_app_play_next_song", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_play_next_song", "result": "success"}      { "cmd": "reply_app_play_next_song", "result": "failure"} 
+
+8. APP 向服务器 请求上一首歌
+APP发送给服务器: { "cmd": "app_play_prev_song"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_play_prev_song", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_play_prev_song"}
+音箱返回给服务器: { "cmd": "reply_app_play_prev_song", "result": "success"}      { "cmd": "reply_app_play_prev_song", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_play_prev_song", "result": "success"}      { "cmd": "reply_app_play_prev_song", "result": "failure"} 
+
+9. APP 向服务器 请求增加音量
+APP发送给服务器: { "cmd": "app_add_volume"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_add_volume", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_add_volume"}
+音箱返回给服务器: { "cmd": "reply_app_add_volume", "result": "success"}      { "cmd": "reply_app_add_volume", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_add_volume", "result": "success"}      { "cmd": "reply_app_add_volume", "result": "failure"} 
+
+
+10. APP 向服务器 请求减小音量
+APP发送给服务器: { "cmd": "app_sub_volume"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_sub_volume", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_sub_volume"}
+音箱返回给服务器: { "cmd": "reply_app_sub_volume", "result": "success"}      { "cmd": "reply_app_sub_volume", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_sub_volume", "result": "success"}      { "cmd": "reply_app_sub_volume", "result": "failure"} 
+
+11. APP 向服务器 请求顺序播放模式
+APP发送给服务器: { "cmd": "app_order_mode"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_order_mode", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_order_mode"}
+音箱返回给服务器: { "cmd": "reply_app_order_mode", "result": "success"}      { "cmd": "reply_app_order_mode", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_order_mode", "result": "success"}      { "cmd": "reply_app_order_mode", "result": "failure"} 
+
+12. APP 向服务器 请求单曲循环模式
+APP发送给服务器: { "cmd": "app_single_mode"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_single_mode", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_single_mode"}
+音箱返回给服务器: { "cmd": "reply_app_single_mode", "result": "success"}      { "cmd": "reply_app_single_mode", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_single_mode", "result": "success"}      { "cmd": "reply_app_single_mode", "result": "failure"} 
+
+13. APP 向服务器 请求随机播放模式
+APP发送给服务器: { "cmd": "app_random_mode"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_random_mode", "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_random_mode"}
+音箱返回给服务器: { "cmd": "reply_app_random_mode", "result": "success"}      { "cmd": "reply_app_random_mode", "result": "failure"} 
+服务器转发给APP:  { "cmd": "reply_app_random_mode", "result": "success"}      { "cmd": "reply_app_random_mode", "result": "failure"} 
+
+14. APP 获取 嵌入式端歌曲列表
+APP发送给服务器: { "cmd": "app_get_music_list"}
+如果音箱不在线， 服务器回复APP：{ "cmd": "reply_app_get_music_list, "result": "offline"}
+如果音箱在线， 服务器转发 嵌入式端 { "cmd": "app_get_music_list"}
+音箱返回给服务器: { "cmd": "upload_music_list", "music":["1.mp3","2.mp3","3.mp3","4.mp3","5.mp3"]}
+服务器转发给APP:  { "cmd": "upload_music_list", "music":["1.mp3","2.mp3","3.mp3","4.mp3","5.mp3"]}
+15.  当嵌入式端 更新了歌曲列表（当前列表播放完毕，切换歌手 也会触发upload_music_list
+
+
+
+16. APP 注册
+APP发送给服务器 { "cmd": "app_register","appid":"0001","password":"1111111"}
+服务器成功 回复APP： { "cmd": "reply_app_register","result":"success"}
+服务器失败 回复APP： { "cmd": "reply_app_register","result":"xxxx"}
+result["result"] = "idshort";    //账号太短
+result["result"] = "passhort";    //密码太短
+result["result"] = "idexist";    //用户已存在
+result["result"] = "failure";    // 服务器发生错误(查询失败)
+
+
+17. APP 请求绑定设备
+APP发送给服务器: { "cmd": "app_bind", "appid":"0001", "deviceid":"0001"}
+服务器成功 回复APP： { "cmd": "reply_app_bind","result":"success", "deviceid":"0001"}
+服务器失败 回复APP： { "cmd": "reply_app_bind","result":"xxxx"}
+result["result"] = "isbind";        //设备ID已经被绑定了
+result["result"] = "devidshort";     //设备ID输入的太短了
+result["result"] = "failure";        // 服务器发生错误(查询失败)
+
+18. APP 登录 
+APP发送给服务器 { "cmd": "app_login","appid":"0001","password":"1111111"}
+服务器成功 回复APP： { "cmd": "reply_app_login","result":"success", "deviceid":"0001"};
+服务器失败 回复APP： { "cmd": "reply_app_login","result":"xxxx"}
+result["result"] = "idshort";    //账号太短
+result["result"] = "passhort";    //密码太短
+result["result"] = "idnotexist";    //用户不存在
+result["result"] = "notbind";    //未绑定设备（登陆成功）
+result["result"] = "passerr";    //密码错误
+result["result"] = "failure";    // 服务器发生错误(查询失败)

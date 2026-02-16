@@ -1,0 +1,67 @@
+x iǎo ài t óng x ué @小爱同学
+x iǎo m ǐ x iǎo m ǐ @小米小米
+x iǎo l iú t óng x ué @小刘同学
+
+L AY1 T AH1 P @LIGHT_UP
+L AH1 V L IY0 CH AY1 L D @LOVELY_CHILD
+
+x ià y ī sh ǒu @下一首
+x ià y ì sh ǒu @下一首
+h uàn y ī sh ǒu @换一首
+q iē h uàn g ē q ǔ @切换歌曲
+x ià y ī q ǔ @下一曲
+x ià y ì q ǔ @下一曲
+
+sh àng y ī sh ǒu @上一首
+sh àng y ì sh ǒu @上一首
+sh àng y ī q ǔ @上一曲
+sh àng y ì q ǔ @上一曲
+q ián y ī sh ǒu @前一首
+q ián y ì sh ǒu @前一首
+
+w ǒ x iǎng t īng g ē @我想听歌  
+x iǎng t īng g ē @想听歌  
+g ěi w ǒ f àng sh ǒu g ē @给我放首歌  
+k āi sh ǐ b ō f àng @开始播放
+
+z àn t íng @暂停
+d ěng y ī x ià @等一下
+d ěng y í x ià @等一下
+d ěng y ī x ià @等一下
+d ěng y í x ià @等一下
+x iān t íng x ià @先停下
+
+j ì x ù @继续
+
+w ǒ b ù x iǎng t īng l e @我不想听了
+j ié sh ù @结束
+t uì ch ū @退出
+g uān b ì @关闭
+g uān d iào @关掉
+t íng zh ǐ @停止
+
+sh ēng y īn x iǎo y ī x iē @声音小一些
+sh ēng y īn x iǎo y ì x iē @声音小一些
+y īn l iàng x iǎo y ī x iē @音量小一些
+y īn l iàng x iǎo y ì x iē @音量小一些
+j iǎn x iǎo y īn l iàng @减小音量
+j iǎn x iǎo sh ēng y īn @减小声音  
+j iǎn sh ǎo y īn l iàng @减少音量
+j iàng d ī y īn l iàng @降低音量
+j iàng d ī sh ēng y īn @降低声音
+sh ēng y īn t ài d à @声音太大
+y īn l iàng t ài d à @音量太大
+
+sh ēng y īn d à y ī x iē @声音大一些
+sh ēng y īn d à y ì x iē @声音大一些
+y īn l iàng d à y ī x iē @音量大一些
+y īn l iàng d à y ì x iē @音量大一些
+z ēng d à y īn l iàng @增大音量
+z ēng d à sh ēng y īn @增大声音
+sh ēng y īn t ài x iǎo @声音太小
+y īn l iàng t ài x iǎo @音量太小
+
+d ān q ǔ x ún h uán @单曲循环
+sh ùn x ù b ō f àng @顺序播放
+
+z ài x iàn m ó sh ì @在线模式
