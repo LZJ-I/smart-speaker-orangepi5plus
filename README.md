@@ -19,19 +19,42 @@ smart-speaker-orangepi5plus/
 └── smart-speaker-server/    # 服务器端 (可选)
 ```
 
-### 1. 下载 ASR 模型 (重要！)
+## 下载依赖
 
-ASR 模型文件很大，没有包含在 Git 仓库中，需要手动下载：
+### 模型文件（模型比较大，无法上传到 Git）
 
+#### 1. ASR 模型
 ```bash
 cd smart-speaker-client/3rdparty/model/asr
-
-# 使用代理下载
-wget "https://hk.gh-proxy.org/https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
-
-# 或者直接下载
-# wget "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
-
-# 解压
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2
 tar -jxf sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2
+```
+
+#### 2. VAD 模型
+```bash
+cd smart-speaker-client/3rdparty/model/asr
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+```
+
+#### 3. KWS 模型
+```bash
+cd smart-speaker-client/3rdparty/model/kws
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+tar -jxf sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+```
+
+### 框架文件
+
+#### 1. JNI 版本
+```bash
+cd smart-speaker-client/3rdparty
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.25/sherpa-onnx-v1.12.25-linux-aarch64-jni.tar.bz2
+tar -jxf sherpa-onnx-v1.12.25-linux-aarch64-jni.tar.bz2
+```
+
+#### 2. 共享库版本（CPU）
+```bash
+cd smart-speaker-client/3rdparty
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.25/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu.tar.bz2
+tar -jxf sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu.tar.bz2
 ```
