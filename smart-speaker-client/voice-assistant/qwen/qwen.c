@@ -15,7 +15,7 @@
 
 // 配置项
 #define QWEN_SCRIPT_PATH "../qwen/qwen.sh"
-#define TTS_FIFO_PATH "../fifo/tts_fifo"
+#define TTS_FIFO_PATH "../../fifo/tts_fifo"
 #define MAX_COMMAND_LEN 1024
 #define MAX_RESPONSE_LEN 4096
 
