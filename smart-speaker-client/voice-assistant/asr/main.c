@@ -5,41 +5,19 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
 
 #include "../common/alsa.h"
 #include "../common/mysamplerate.h"
 #include "sherpa_asr.h"
 
 #define TAG "ASR-TEST"
-#define ASR_FIFO_PATH "../fifo/asr_fifo"
 
 int running = 1;
-int asr_fd = -1;
 int16_t *alsa_buf = NULL;
 
 void sigint_handler(int sig) {
     LOGI(TAG, "收到退出信号，正在清理资源...");
     running = 0;
-}
-
-static int open_pipe() {
-    if (asr_fd != -1) {
-        close(asr_fd);
-        asr_fd = -1;
-    }
-
-    asr_fd = open(ASR_FIFO_PATH, O_WRONLY);
-    if (asr_fd == -1) {
-        LOGE(TAG, "打开ASR管道失败: %s", strerror(errno));
-        return -1;
-    }
-
-    LOGI(TAG, "ASR管道打开成功！fd=%d", asr_fd);
-    return 0;
 }
 
 int main(int argc, char const *argv[])
@@ -75,11 +53,6 @@ int main(int argc, char const *argv[])
         return -1;
     }
 
-    mkdir("../fifo", 0777);
-    if (open_pipe() != 0) {
-        LOGE(TAG, "打开ASR管道失败");
-    }
-
     LOGI(TAG, "========= 开始ASR识别 =========\n");
 
     while (running) {
@@ -113,7 +86,6 @@ int main(int argc, char const *argv[])
     cleanup_sherpa_asr();
     cleanup_resampler();
     cleanup_alsa();
-    if (asr_fd != -1) close(asr_fd);
 
     LOGI(TAG, "ASR测试程序退出");
     return 0;

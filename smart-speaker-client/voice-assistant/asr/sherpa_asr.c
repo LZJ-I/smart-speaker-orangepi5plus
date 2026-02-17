@@ -19,7 +19,6 @@
 const SherpaOnnxVoiceActivityDetector *g_vad = NULL;
 const SherpaOnnxOfflineRecognizer *g_offline_recognizer = NULL;
 const SherpaOnnxCircularBuffer *g_audio_buffer = NULL;
-extern int asr_fd;
 
 #define VAD_WINDOW_SIZE 512
 #define BUFFER_CAPACITY 480000
@@ -113,15 +112,6 @@ int process_asr_result(float *model_audio, int model_frames)
                 if (result && strlen(result->text) > 0)
                 {
                     LOGI(TAG, "识别结果: %s", result->text);
-                    if (asr_fd != -1)
-                    {
-                        char buf[512] = {0};
-                        snprintf(buf, sizeof(buf), "%s\n", result->text);
-                        if (write(asr_fd, buf, strlen(buf)) == -1)
-                        {
-                            LOGW(TAG, "写入语音识别管道失败!");
-                        }
-                    }
                     ret = 0;
                 }
 
