@@ -5,3 +5,6 @@ asr/silero_vad.onnx
 
 kws/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/
 kws/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+
+tts/matcha-icefall-zh-en.tar.bz2
+tts/matcha-icefall-zh-en
