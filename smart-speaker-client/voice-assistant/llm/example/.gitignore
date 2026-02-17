@@ -1,6 +1,6 @@
 # 配置文件（包含 API Key）
-config.sh
+llm_config.sh
 
 # 编译生成的文件
-qwen_test
+llm_test
 *.o

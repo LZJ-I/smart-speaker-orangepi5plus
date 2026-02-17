@@ -7,8 +7,8 @@
 #include <signal.h>
 #include <time.h>
 
-#include "sherpa_tts.h"
-#include "alsa_output.h"
+#include "../sherpa_tts.h"
+#include "../alsa_output.h"
 
 #define TAG "TTS-TEST"
 

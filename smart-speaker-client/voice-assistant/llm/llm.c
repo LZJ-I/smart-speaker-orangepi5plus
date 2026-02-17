@@ -1,13 +1,13 @@
 #define LOG_LEVEL 4
 #include "../../debug_log.h"
-#include "sherpa_qwen.h"
+#include "llm.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <json-c/json.h>
 
-#define TAG "QWEN"
+#define TAG "LLM"
 
 #ifdef KWS_TEST_MODE
 #define MODEL_PREFIX "../../3rdparty"
@@ -15,7 +15,7 @@
 #define MODEL_PREFIX "../3rdparty"
 #endif
 
-#define QWEN_SCRIPT_PATH "./qwen.sh"
+#define LLM_SCRIPT_PATH "./llm.sh"
 #define MAX_COMMAND_LEN 1024
 #define MAX_RESPONSE_LEN 4096
 
@@ -96,12 +96,12 @@ cleanup:
     return ret;
 }
 
-int init_sherpa_qwen(void) {
-    LOGI(TAG, "Qwen 初始化完成");
+int init_llm(void) {
+    LOGI(TAG, "LLM 初始化完成");
     return 0;
 }
 
-int generate_qwen_response(const char *question, char *response, size_t response_len) {
+int generate_llm_response(const char *question, char *response, size_t response_len) {
     if (question == NULL || strlen(question) == 0) {
         LOGE(TAG, "%s", get_error_message(ERR_INVALID_ARGS));
         return -1;
@@ -110,7 +110,7 @@ int generate_qwen_response(const char *question, char *response, size_t response
     LOGI(TAG, "用户问题: %s", question);
 
     char command[MAX_COMMAND_LEN] = {0};
-    snprintf(command, sizeof(command), "cd ./ && ./qwen.sh \"%s\" 2>>/dev/null", question);
+    snprintf(command, sizeof(command), "cd ./ && ./llm.sh \"%s\" 2>>/dev/null", question);
     LOGD(TAG, "执行命令: %s", command);
 
     FILE* fp = popen(command, "r");
@@ -145,6 +145,6 @@ int generate_qwen_response(const char *question, char *response, size_t response
     return 0;
 }
 
-void cleanup_sherpa_qwen(void) {
-    LOGI(TAG, "Qwen 资源清理完成");
+void cleanup_llm(void) {
+    LOGI(TAG, "LLM 资源清理完成");
 }

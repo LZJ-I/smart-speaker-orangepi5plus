@@ -2,7 +2,7 @@
 
 # 加载配置文件
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/config.sh"
+source "$SCRIPT_DIR/llm_config.sh"
 
 # -$# -eq 0 : 如果没有参数
 if [ $# -eq 0 ]; then
@@ -15,14 +15,14 @@ user_message=$1
 
 # 执行脚本 ： 向qwen-plus模型发送请求
 curl -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
--H "Authorization: Bearer $QWEN_API_KEY" \
+-H "Authorization: Bearer $LLM_API_KEY" \
 -H "Content-Type: application/json" \
 -d '{
-    "model": "'"$QWEN_MODEL"'",
+    "model": "'"$LLM_MODEL"'",
     "messages": [
         {
             "role": "system",
-            "content": "'"$QWEN_SYSTEM_PROMPT"'"
+            "content": "'"$LLM_SYSTEM_PROMPT"'"
         },
         {
             "role": "user",

@@ -1,13 +1,9 @@
 #!/bin/bash
 
-# Qwen 配置文件 - 示例模板
-# 使用方法：
-# 1. 复制此文件为 config.sh
-# 2. 填入你的 API Key 和其他配置
-# 3. config.sh 已在 .gitignore 中，不会被上传
+# Qwen 配置文件
 
-# API Key (请填入你的 API Key)
-export QWEN_API_KEY="your-api-key-here"
+# API Key
+export QWEN_API_KEY="sk-a90732c9453a41fc910a3baae3b71eb8"
 
 # 模型名称
 export QWEN_MODEL="qwen-plus"

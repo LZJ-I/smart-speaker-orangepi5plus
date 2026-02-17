@@ -10,8 +10,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "../common/alsa.h"
-#include "sherpa_kws.h"
+#include "../../common/alsa.h"
+#include "../sherpa_kws.h"
 
 #define TAG "KWS-TEST"
 #define KWS_FIFO_PATH "../fifo/kws_fifo"

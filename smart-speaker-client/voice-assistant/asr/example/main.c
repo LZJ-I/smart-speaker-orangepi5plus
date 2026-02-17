@@ -6,9 +6,9 @@
 #include <errno.h>
 #include <signal.h>
 
-#include "../common/alsa.h"
-#include "../common/mysamplerate.h"
-#include "sherpa_asr.h"
+#include "../../common/alsa.h"
+#include "../../common/mysamplerate.h"
+#include "../sherpa_asr.h"
 
 #define TAG "ASR-TEST"
 

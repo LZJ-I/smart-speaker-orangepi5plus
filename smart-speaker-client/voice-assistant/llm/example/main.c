@@ -5,9 +5,9 @@
 #include <string.h>
 #include <signal.h>
 
-#include "sherpa_qwen.h"
+#include "../llm.h"
 
-#define TAG "QWEN-TEST"
+#define TAG "LLM-TEST"
 #define MAX_RESPONSE_LEN 4096
 
 int running = 1;
@@ -23,30 +23,30 @@ int main(int argc, char const *argv[]) {
         return -1;
     }
 
-    LOGI(TAG, "=== Qwen 独立测试启动 ===");
+    LOGI(TAG, "=== LLM 独立测试启动 ===");
 
     if (argc != 2) {
         LOGE(TAG, "用法: %s <你的问题>", argv[0]);
         return -1;
     }
 
-    if (init_sherpa_qwen() != 0) {
-        LOGE(TAG, "Qwen 初始化失败");
+    if (init_llm() != 0) {
+        LOGE(TAG, "LLM 初始化失败");
         return -1;
     }
-    LOGI(TAG, "Qwen 初始化完成");
+    LOGI(TAG, "LLM 初始化完成");
 
     char response[MAX_RESPONSE_LEN] = {0};
-    if (generate_qwen_response(argv[1], response, sizeof(response)) != 0) {
+    if (generate_llm_response(argv[1], response, sizeof(response)) != 0) {
         LOGE(TAG, "生成响应失败");
-        cleanup_sherpa_qwen();
+        cleanup_llm();
         return -1;
     }
 
-    LOGI(TAG, "Qwen 回复: %s", response);
+    LOGI(TAG, "LLM 回复: %s", response);
 
-    cleanup_sherpa_qwen();
+    cleanup_llm();
 
-    LOGI(TAG, "Qwen 测试程序退出");
+    LOGI(TAG, "LLM 测试程序退出");
     return 0;
 }
