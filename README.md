@@ -2,9 +2,6 @@
 
 基于 OrangePi 5 Plus 的智能音箱项目，集成了语音识别(ASR)、关键词检测(KWS)、语音合成(TTS)和 AI 对话功能。
 
-
-
-
 ## 克隆项目
 ```bash
 git clone https://github.com/LZJ-I/smart-speaker-orangepi5plus
@@ -33,6 +30,19 @@ wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_v
 cd smart-speaker-client/3rdparty/model/kws
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
 tar -jxf sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2
+```
+
+#### 4. TTS 模型
+```bash
+cd smart-speaker-client/3rdparty/model/tts
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/matcha-icefall-zh-en.tar.bz2
+tar -jxf matcha-icefall-zh-en.tar.bz2
+```
+
+#### 5. Vocoder 模型
+```bash
+cd smart-speaker-client/3rdparty/model/tts
+wget https://hk.gh-proxy.org/https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-16khz-univ.onnx
 ```
 
 ### 框架文件
