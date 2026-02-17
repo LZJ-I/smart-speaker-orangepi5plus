@@ -22,8 +22,6 @@ typedef enum {
 typedef struct {
     OutputMode mode;
     const char* text;
-    int64_t speaker_id;
-    float speed;
     const char* output_file;
     const char* alsa_device;
 } TTSConfig;
@@ -194,8 +192,6 @@ void print_config(TTSConfig* config) {
            config->mode == MODE_CHUNKED_FILE ? "分块输出到文件" :
            "分块输出到ALSA");
     LOGI(TAG, "文本: %s", config->text);
-    LOGI(TAG, "说话人ID: %ld", config->speaker_id);
-    LOGI(TAG, "语速: %.1f", config->speed);
     if (config->output_file) {
         LOGI(TAG, "输出文件: %s", config->output_file);
     }
@@ -222,15 +218,10 @@ int init_output(TTSConfig* config) {
         (config->mode == MODE_SINGLE_ALSA || config->mode == MODE_CHUNKED_ALSA)) {
         LOGI(TAG, "正在初始化ALSA设备: %s", config->alsa_device);
         if (init_alsa_output(g_sample_rate, (char*)config->alsa_device) != 0) {
-            LOGE(TAG, "ALSA初始化失败，尝试使用default设备");
-            if (init_alsa_output(g_sample_rate, "default") != 0) {
-                LOGE(TAG, "ALSA初始化失败");
-                return -1;
-            }
-            LOGI(TAG, "ALSA初始化成功 (default)");
-        } else {
-            LOGI(TAG, "ALSA初始化成功");
+            LOGE(TAG, "ALSA初始化失败，请使用 aplay -l 查看可用设备");
+            return -1;
         }
+        LOGI(TAG, "ALSA初始化成功");
     }
     
     return 0;
@@ -260,14 +251,12 @@ void print_usage(const char* program_name) {
     printf("                       3: 分块输出到文件\n");
     printf("                       4: 分块输出到ALSA\n");
     printf("  -t, --text <文本>    要合成的文本\n");
-    printf("  -s, --sid <ID>      说话人ID (默认: 0)\n");
-    printf("  -p, --speed <速度>   语速 (默认: 1.0)\n");
     printf("  -o, --output <文件>  输出文件 (默认: generated.wav)\n");
-    printf("  -d, --device <设备>  ALSA设备 (默认: hw:5,0)\n");
+    printf("  -d, --device <设备>  ALSA设备 (使用 aplay -l 查看)\n");
     printf("  -h, --help          显示帮助信息\n");
     printf("\n示例:\n");
     printf("  %s                                      # 使用默认设置\n", program_name);
-    printf("  %s -m 4 -t \"你好世界\" -d default     # 分块输出到默认ALSA设备\n", program_name);
+    printf("  %s -m 4 -t \"你好世界\" -d hw:5,0    # 分块输出到指定ALSA设备\n", program_name);
 }
 
 int parse_args(int argc, char* argv[], TTSConfig* config) {
@@ -282,10 +271,6 @@ int parse_args(int argc, char* argv[], TTSConfig* config) {
             }
         } else if ((strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--text") == 0) && i + 1 < argc) {
             config->text = argv[++i];
-        } else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--sid") == 0) && i + 1 < argc) {
-            config->speaker_id = atoll(argv[++i]);
-        } else if ((strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--speed") == 0) && i + 1 < argc) {
-            config->speed = atof(argv[++i]);
         } else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
             config->output_file = argv[++i];
         } else if ((strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--device") == 0) && i + 1 < argc) {
@@ -299,10 +284,8 @@ int main(int argc, char* argv[]) {
     TTSConfig config = {
         .mode = MODE_SINGLE_FILE,
         .text = "你好，这是一个智能音箱测试。今天天气不错，适合出去走走。",
-        .speaker_id = 0,
-        .speed = 1.0f,
         .output_file = "generated.wav",
-        .alsa_device = "hw:5,0"
+        .alsa_device = NULL
     };
     
     g_config = &config;
@@ -321,9 +304,16 @@ int main(int argc, char* argv[]) {
     LOGI(TAG, "======== TTS测试程序启动 ========");
     print_config(&config);
     
-    if (init_sherpa_tts() != 0) {
-        LOGE(TAG, "TTS模型初始化失败");
-        return -1;
+    if (config.mode == MODE_SINGLE_FILE || config.mode == MODE_SINGLE_ALSA) {
+        if (init_sherpa_tts() != 0) {
+            LOGE(TAG, "TTS模型初始化失败");
+            return -1;
+        }
+    } else {
+        if (init_sherpa_tts_with_chunk_size(1) != 0) {
+            LOGE(TAG, "TTS模型初始化失败");
+            return -1;
+        }
     }
     g_sample_rate = g_tts_sample_rate;
     LOGI(TAG, "TTS模型加载完成，采样率: %d Hz", g_sample_rate);
@@ -340,13 +330,40 @@ int main(int argc, char* argv[]) {
     
     LOGI(TAG, "开始生成音频...");
     
-    int result;
+    int result = 0;
     if (config.mode == MODE_SINGLE_FILE || config.mode == MODE_SINGLE_ALSA) {
-        result = generate_tts_audio_with_callback(config.text, config.speaker_id, 
-                                                   config.speed, single_callback, NULL);
+        float* samples = NULL;
+        int32_t n = 0;
+        uint32_t sr = 0;
+        
+        result = generate_tts_audio_full(config.text, &samples, &n, &sr);
+        
+        if (result == 0 && samples != NULL) {
+            struct timespec end_time;
+            clock_gettime(CLOCK_MONOTONIC, &end_time);
+            double elapsed = (end_time.tv_sec - g_start_time.tv_sec) + 
+                            (end_time.tv_nsec - g_start_time.tv_nsec) / 1e9;
+            LOGI(TAG, ">>> 完整音频生成完成！耗时: %.3f 秒 <<<", elapsed);
+            
+            int16_t* pcm_data = (int16_t*)malloc(n * sizeof(int16_t));
+            convert_to_pcm(samples, pcm_data, n);
+            
+            if (config.mode == MODE_SINGLE_ALSA) {
+                LOGI(TAG, "正在播放...");
+                play_audio(pcm_data, n);
+            }
+            if (config.mode == MODE_SINGLE_FILE && g_wav_file != NULL) {
+                save_audio(pcm_data, n);
+            }
+            
+            free(pcm_data);
+            destroy_generated_audio(samples);
+        }
     } else {
-        result = generate_tts_audio_with_callback(config.text, config.speaker_id, 
-                                                   config.speed, chunked_callback, NULL);
+        if (config.mode == MODE_CHUNKED_FILE || config.mode == MODE_CHUNKED_ALSA) {
+            result = generate_tts_audio_with_callback(config.text, 
+                                                       chunked_callback, NULL);
+        }
     }
     
     if (result != 0) {

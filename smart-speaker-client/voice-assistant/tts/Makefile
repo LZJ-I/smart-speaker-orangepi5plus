@@ -1,6 +1,6 @@
 CC = gcc
 TARGET = tts_test
-SRCS = test_main.c \
+SRCS = main.c \
        sherpa_tts.c \
        alsa_output.c
 OBJS = $(SRCS:.c=.o)

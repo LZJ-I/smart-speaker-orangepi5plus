@@ -1,2 +1,5 @@
 # build
 tts_test
+
+# generated audio
+*.wav
