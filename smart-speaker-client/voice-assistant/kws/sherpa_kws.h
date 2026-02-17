@@ -10,11 +10,6 @@ extern const SherpaOnnxKeywordSpotter *g_kws_spotter;
 // 全局音频流句柄（供KWS识别使用）
 extern const SherpaOnnxOnlineStream *g_kws_stream;
 
-// 离线模式与在线模式
-enum OnlineMode{
-    ONLINE_MODE_NO,  // 离线模式
-    ONLINE_MODE_YES  // 在线模式
-};
 
 // 初始化sherpa-onnx-kws资源
 int init_sherpa_kws(void);

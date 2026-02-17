@@ -18,7 +18,6 @@
 
 int running = 1;
 int16_t *alsa_buf = NULL;
-enum OnlineMode g_current_online_mode = ONLINE_MODE_YES;
 
 void sigint_handler(int sig) {
     LOGI(TAG, "收到退出信号，正在清理资源...");
