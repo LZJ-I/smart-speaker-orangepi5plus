@@ -11,8 +11,8 @@ const SherpaOnnxOnlineStream *g_kws_stream = NULL;
 #define TAG "KWS"
 
 #ifdef KWS_TEST_MODE
-#define MODEL_PREFIX "../../3rdparty"
-#define KEYWORDS_FILE "../keywords.txt"
+#define MODEL_PREFIX "../../../3rdparty"
+#define KEYWORDS_FILE "../../keywords.txt"
 #else
 #define MODEL_PREFIX "../3rdparty"
 #define KEYWORDS_FILE "./keywords.txt"

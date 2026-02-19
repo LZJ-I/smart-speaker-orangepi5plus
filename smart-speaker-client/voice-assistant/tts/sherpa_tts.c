@@ -11,9 +11,9 @@ unsigned int g_tts_sample_rate = 0;
 #define TAG "TTS"
 
 #ifdef KWS_TEST_MODE
-#define MODEL_PREFIX "../../3rdparty"
+#define MODEL_PREFIX "../../../3rdparty"
 #else
-#define MODEL_PREFIX "../3rdparty"
+#define MODEL_PREFIX "../../3rdparty"
 #endif
 
 typedef struct {
