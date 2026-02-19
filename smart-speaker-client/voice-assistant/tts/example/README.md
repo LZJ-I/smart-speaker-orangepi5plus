@@ -65,12 +65,25 @@ make
 
 ### 功能说明
 
-播放 WAV 文件到默认 ALSA 设备
+播放 WAV 文件到指定 ALSA 设备
+
+### 命令行参数
+
+| 参数 | 说明 |
+|-----|------|
+| `<wav文件>` | 要播放的 WAV 文件路径（必填） |
+| `[ALSA设备]` | ALSA 音频设备（可选，默认为 default） |
 
 ### 使用示例
 
+#### 1. 播放到默认设备
 ```bash
 ./play_wav generated.wav
+```
+
+#### 2. 播放到指定设备
+```bash
+./play_wav generated.wav hw:0,0
 ```
 
 ## 查看可用 ALSA 设备
