@@ -21,4 +21,7 @@ int get_audio_playback_device(const char* target_device, char* result);
 // 初始化alsa播放设备
 int init_alsa_output(unsigned int rate, char* playback_device_name);
 
+// 清理alsa播放设备
+void cleanup_alsa_output(void);
+
 #endif

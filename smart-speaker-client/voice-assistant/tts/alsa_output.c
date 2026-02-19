@@ -5,6 +5,14 @@
 // 全局PCM句柄
 snd_pcm_t *g_pcm_handle = NULL;
 
+void cleanup_alsa_output(void) {
+    if (g_pcm_handle != NULL) {
+        snd_pcm_drain(g_pcm_handle);
+        snd_pcm_close(g_pcm_handle);
+        g_pcm_handle = NULL;
+    }
+}
+
 
 
 // aplay -l最大缓冲区大小
