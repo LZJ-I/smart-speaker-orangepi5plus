@@ -7,11 +7,12 @@
 #include "../common/mysamplerate.h"
 
 #include <unistd.h>
+#include <time.h>
 
 #define TAG "ASR"
 
 #ifdef KWS_TEST_MODE
-#define MODEL_PREFIX "../../3rdparty"
+#define MODEL_PREFIX "../../../3rdparty"
 #else
 #define MODEL_PREFIX "../3rdparty"
 #endif
@@ -22,6 +23,34 @@ const SherpaOnnxCircularBuffer *g_audio_buffer = NULL;
 
 #define VAD_WINDOW_SIZE 512
 #define BUFFER_CAPACITY 480000
+
+// 新增：用于模拟流式识别的变量
+static float *g_current_audio = NULL;
+static int32_t g_current_audio_size = 0;
+static int32_t g_current_audio_capacity = 0;
+static int32_t g_speech_started = 0;
+static struct timespec g_last_recognize_time = {0, 0};
+
+static void ensure_audio_capacity(int32_t required_size) {
+    if (required_size > g_current_audio_capacity) {
+        int32_t new_capacity = (required_size > BUFFER_CAPACITY) ? BUFFER_CAPACITY : required_size * 2;
+        float *new_audio = (float *)realloc(g_current_audio, new_capacity * sizeof(float));
+        if (new_audio == NULL) {
+            LOGE(TAG, "内存分配失败！");
+            return;
+        }
+        g_current_audio = new_audio;
+        g_current_audio_capacity = new_capacity;
+    }
+}
+
+static double get_elapsed_ms(struct timespec *start) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double elapsed = (now.tv_sec - start->tv_sec) * 1000.0;
+    elapsed += (now.tv_nsec - start->tv_nsec) / 1000000.0;
+    return elapsed;
+}
 
 int init_sherpa_asr(void)
 {
@@ -54,16 +83,16 @@ int init_sherpa_asr(void)
     SherpaOnnxVadModelConfig vad_config;
     memset(&vad_config, 0, sizeof(vad_config));
     vad_config.silero_vad.model = MODEL_PREFIX "/model/asr/silero_vad.onnx";
-    vad_config.silero_vad.threshold = 0.25;
-    vad_config.silero_vad.min_silence_duration = 0.5;
-    vad_config.silero_vad.min_speech_duration = 0.5;
-    vad_config.silero_vad.max_speech_duration = 10;
+    vad_config.silero_vad.threshold = 0.5;
+    vad_config.silero_vad.min_silence_duration = 0.1;
+    vad_config.silero_vad.min_speech_duration = 0.25;
+    vad_config.silero_vad.max_speech_duration = 8;
     vad_config.silero_vad.window_size = VAD_WINDOW_SIZE;
     vad_config.sample_rate = MODEL_SAMPLE_RATE;
     vad_config.num_threads = 1;
     vad_config.debug = 0;
 
-    g_vad = SherpaOnnxCreateVoiceActivityDetector(&vad_config, 30);
+    g_vad = SherpaOnnxCreateVoiceActivityDetector(&vad_config, 20);
     if (!g_vad)
     {
         LOGE(TAG, "创建VAD失败!");
@@ -79,6 +108,12 @@ int init_sherpa_asr(void)
         SherpaOnnxDestroyOfflineRecognizer(g_offline_recognizer);
         return -1;
     }
+
+    // 初始化用于模拟流式识别的变量
+    g_current_audio = NULL;
+    g_current_audio_size = 0;
+    g_current_audio_capacity = 0;
+    g_speech_started = 0;
 
     return 0;
 }
@@ -96,6 +131,48 @@ int process_asr_result(float *model_audio, int model_frames)
 
         SherpaOnnxVoiceActivityDetectorAcceptWaveform(g_vad, model_audio + i, chunk_size);
         SherpaOnnxCircularBufferPush(g_audio_buffer, model_audio + i, chunk_size);
+
+        // 保存到用于模拟流式的缓冲区
+        ensure_audio_capacity(g_current_audio_size + chunk_size);
+        if (g_current_audio) {
+            memcpy(g_current_audio + g_current_audio_size, model_audio + i, chunk_size * sizeof(float));
+            g_current_audio_size += chunk_size;
+        }
+
+        // 检查是否开始检测到语音
+        if (!g_speech_started && SherpaOnnxVoiceActivityDetectorDetected(g_vad)) {
+            g_speech_started = 1;
+            clock_gettime(CLOCK_MONOTONIC, &g_last_recognize_time);
+            LOGD(TAG, "检测到语音开始");
+        }
+
+        // 如果已经开始语音，并且超过 0.2 秒，就进行一次模拟流式识别
+        if (g_speech_started && get_elapsed_ms(&g_last_recognize_time) > 200) {
+            const SherpaOnnxOfflineStream *stream = SherpaOnnxCreateOfflineStream(g_offline_recognizer);
+            if (stream && g_current_audio && g_current_audio_size > 0) {
+                SherpaOnnxAcceptWaveformOffline(stream, MODEL_SAMPLE_RATE, g_current_audio, g_current_audio_size);
+                SherpaOnnxDecodeOfflineStream(g_offline_recognizer, stream);
+
+                const SherpaOnnxOfflineRecognizerResult *result = SherpaOnnxGetOfflineStreamResult(stream);
+                if (result && strlen(result->text) > 0) {
+                    LOGI(TAG, "识别中: %s", result->text);
+                }
+                SherpaOnnxDestroyOfflineRecognizerResult(result);
+            }
+            if (stream) {
+                SherpaOnnxDestroyOfflineStream(stream);
+            }
+            clock_gettime(CLOCK_MONOTONIC, &g_last_recognize_time);
+        }
+
+        // 如果 buffer 太大，清理旧数据（只保留最近 10*VAD_WINDOW_SIZE）
+        if (!g_speech_started && g_current_audio_size > 10 * VAD_WINDOW_SIZE) {
+            int32_t keep_samples = 10 * VAD_WINDOW_SIZE;
+            if (g_current_audio && keep_samples > 0) {
+                memmove(g_current_audio, g_current_audio + (g_current_audio_size - keep_samples), keep_samples * sizeof(float));
+            }
+            g_current_audio_size = keep_samples;
+        }
 
         while (!SherpaOnnxVoiceActivityDetectorEmpty(g_vad))
         {
@@ -122,6 +199,15 @@ int process_asr_result(float *model_audio, int model_frames)
 
             SherpaOnnxDestroySpeechSegment(segment);
             SherpaOnnxVoiceActivityDetectorPop(g_vad);
+
+            // 语音片段处理完毕，重置
+            if (g_current_audio) {
+                free(g_current_audio);
+                g_current_audio = NULL;
+            }
+            g_current_audio_size = 0;
+            g_current_audio_capacity = 0;
+            g_speech_started = 0;
         }
 
         i += chunk_size;
@@ -132,6 +218,14 @@ int process_asr_result(float *model_audio, int model_frames)
 
 void cleanup_sherpa_asr(void)
 {
+    if (g_current_audio != NULL)
+    {
+        free(g_current_audio);
+        g_current_audio = NULL;
+    }
+    g_current_audio_size = 0;
+    g_current_audio_capacity = 0;
+
     if (g_audio_buffer != NULL)
     {
         SherpaOnnxDestroyCircularBuffer(g_audio_buffer);
