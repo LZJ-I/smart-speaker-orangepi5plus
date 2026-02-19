@@ -1,6 +1,7 @@
 // 参考的example:
 // - sense-voice-c-api.c: SenseVoice离线识别配置
 // - vad-sense-voice-c-api.c: VAD + SenseVoice集成
+// - sense-voice-simulate-streaming-alsa-cxx-api.cc: 模拟流式识别实现
 #define LOG_LEVEL 4
 #include "../../debug_log.h"
 #include "sherpa_asr.h"
@@ -24,7 +25,7 @@ const SherpaOnnxCircularBuffer *g_audio_buffer = NULL;
 #define VAD_WINDOW_SIZE 512
 #define BUFFER_CAPACITY 480000
 
-// 新增：用于模拟流式识别的变量
+// 用于模拟流式识别的变量
 static float *g_current_audio = NULL;
 static int32_t g_current_audio_size = 0;
 static int32_t g_current_audio_capacity = 0;
