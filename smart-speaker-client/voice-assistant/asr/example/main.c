@@ -1,5 +1,5 @@
 #define LOG_LEVEL 4
-#include "../../debug_log.h"
+#include "../../../debug_log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
