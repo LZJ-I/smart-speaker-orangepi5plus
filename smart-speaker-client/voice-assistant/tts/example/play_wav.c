@@ -169,6 +169,9 @@ int main(int argc, char *argv[]) {
     const char *wav_file = argv[1];
     const char *alsa_device = (argc >= 3) ? argv[2] : "default";
     
+    // 取消设置DISPLAY环境变量，防止ALSA尝试连接X11，避免xcb相关输出
+    unsetenv("DISPLAY");
+    
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
