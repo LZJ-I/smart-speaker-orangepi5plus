@@ -33,6 +33,11 @@ enum SherpaOnnxState{
 
 int current_state = STATE_KWS;  // 当前状态，初始为关键词识别状态
 
+enum OnlineMode {
+    ONLINE_MODE_NO,
+    ONLINE_MODE_YES
+};
+
 enum OnlineMode g_current_online_mode = ONLINE_MODE_YES;  // 初始为在线模式
 
 
