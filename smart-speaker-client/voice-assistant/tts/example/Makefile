@@ -20,6 +20,8 @@ tts_test: $(TTS_OBJS)
 
 play_wav: $(WAV_OBJS)
 	$(CC) -o $@ $(WAV_OBJS) $(LIBS)
+	rm -f $(TTS_OBJS) $(WAV_OBJS)
+	rm -f ../*.o
 
 %.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS)
