@@ -26,3 +26,4 @@ play_wav: $(WAV_OBJS)
 
 clean:
 	rm -f $(TTS_OBJS) $(WAV_OBJS) $(TARGETS)
+	rm -f ../*.o
