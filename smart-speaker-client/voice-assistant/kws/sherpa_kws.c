@@ -13,6 +13,9 @@ const SherpaOnnxOnlineStream *g_kws_stream = NULL;
 #ifdef KWS_TEST_MODE
 #define MODEL_PREFIX "../../../3rdparty"
 #define KEYWORDS_FILE "../../keywords.txt"
+#elif defined(PROCESS_MODE)
+#define MODEL_PREFIX "./3rdparty"
+#define KEYWORDS_FILE "./voice-assistant/keywords.txt"
 #else
 #define MODEL_PREFIX "../3rdparty"
 #define KEYWORDS_FILE "./keywords.txt"
