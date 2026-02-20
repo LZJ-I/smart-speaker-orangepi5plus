@@ -12,6 +12,8 @@ unsigned int g_tts_sample_rate = 0;
 
 #ifdef KWS_TEST_MODE
 #define MODEL_PREFIX "../../../3rdparty"
+#elif defined(PROCESS_MODE)
+#define MODEL_PREFIX "./3rdparty"
 #else
 #define MODEL_PREFIX "../../3rdparty"
 #endif
