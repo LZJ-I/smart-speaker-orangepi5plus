@@ -1,21 +1,19 @@
-CC = gcc
-TARGET = voice_assistant
-SRCS = main.c \
-       common/alsa.c \
-       common/mysamplerate.c \
-       asr/sherpa_asr.c \
-       kws/sherpa_kws.c
-OBJS = $(SRCS:.c=.o)
 
-CFLAGS = -Wall -g -I../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -Icommon -Iasr -Ikws -I.
-LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/lib -lsamplerate
+.PHONY: all clean asr_kws tts original
 
-$(TARGET): $(OBJS)
-	$(CC) -o $(TARGET) $(OBJS) $(LIBS)
-	rm -f $(OBJS)
+all: asr_kws tts
 
-%.o: %.c
-	$(CC) -c -o $@ $< $(CFLAGS)
+asr_kws:
+	$(MAKE) -C main_asr_kws
+
+tts:
+	$(MAKE) -C main_tts
+
+original:
+	$(MAKE) -f Makefile.original
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	$(MAKE) -f Makefile.original clean || true
+	$(MAKE) -C main_asr_kws clean
+	$(MAKE) -C main_tts clean
+
