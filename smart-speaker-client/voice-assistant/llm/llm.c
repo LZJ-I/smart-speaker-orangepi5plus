@@ -11,11 +11,14 @@
 
 #ifdef KWS_TEST_MODE
 #define MODEL_PREFIX "../../3rdparty"
+#define LLM_SCRIPT_PATH "../../llm.sh"
+#elif defined(PROCESS_MODE)
+#define MODEL_PREFIX "./3rdparty"
+#define LLM_SCRIPT_PATH "./voice-assistant/llm.sh"
 #else
 #define MODEL_PREFIX "../3rdparty"
-#endif
-
 #define LLM_SCRIPT_PATH "./llm.sh"
+#endif
 #define MAX_COMMAND_LEN 1024
 #define MAX_RESPONSE_LEN 4096
 
@@ -89,7 +92,14 @@ static ErrorCode parse_json_response(const char* json_str, char* out_content, si
 
     strncpy(out_content, content_str, out_len - 1);
     out_content[out_len - 1] = '\0';
-    LOGI(TAG, "解析响应成功，内容: %s", content_str);
+
+    for (size_t i = 0; i < strlen(out_content); i++) {
+        if (out_content[i] == '\n' || out_content[i] == '\r' || out_content[i] == '\t') {
+            out_content[i] = ' ';
+        }
+    }
+
+    LOGI(TAG, "解析响应成功，内容: %s", out_content);
 
 cleanup:
     json_object_put(json);
@@ -110,7 +120,7 @@ int generate_llm_response(const char *question, char *response, size_t response_
     LOGI(TAG, "用户问题: %s", question);
 
     char command[MAX_COMMAND_LEN] = {0};
-    snprintf(command, sizeof(command), "cd ./ && ./llm.sh \"%s\" 2>>/dev/null", question);
+    snprintf(command, sizeof(command), "cd ./voice-assistant/llm && ./llm.sh \"%s\" 2>>/dev/null", question);
     LOGD(TAG, "执行命令: %s", command);
 
     FILE* fp = popen(command, "r");
@@ -143,6 +153,10 @@ int generate_llm_response(const char *question, char *response, size_t response_
     }
 
     return 0;
+}
+
+int query_llm(const char *question, char *response, size_t response_len) {
+    return generate_llm_response(question, response, response_len);
 }
 
 void cleanup_llm(void) {
