@@ -9,11 +9,19 @@
 
 #include <unistd.h>
 #include <time.h>
+#include <string.h>
 
 #define TAG "ASR"
 
+char g_current_asr_text_buffer[1024] = {0};
+extern char g_last_asr_text[1024];
+extern struct timespec g_last_asr_update_time;
+extern int g_asr_result_updated;
+
 #ifdef KWS_TEST_MODE
 #define MODEL_PREFIX "../../../3rdparty"
+#elif defined(PROCESS_MODE)
+#define MODEL_PREFIX "./3rdparty"
 #else
 #define MODEL_PREFIX "../3rdparty"
 #endif
@@ -25,7 +33,6 @@ const SherpaOnnxCircularBuffer *g_audio_buffer = NULL;
 #define VAD_WINDOW_SIZE 512
 #define BUFFER_CAPACITY 480000
 
-// 用于模拟流式识别的变量
 static float *g_current_audio = NULL;
 static int32_t g_current_audio_size = 0;
 static int32_t g_current_audio_capacity = 0;
@@ -110,7 +117,6 @@ int init_sherpa_asr(void)
         return -1;
     }
 
-    // 初始化用于模拟流式识别的变量
     g_current_audio = NULL;
     g_current_audio_size = 0;
     g_current_audio_capacity = 0;
@@ -133,21 +139,18 @@ int process_asr_result(float *model_audio, int model_frames)
         SherpaOnnxVoiceActivityDetectorAcceptWaveform(g_vad, model_audio + i, chunk_size);
         SherpaOnnxCircularBufferPush(g_audio_buffer, model_audio + i, chunk_size);
 
-        // 保存到用于模拟流式的缓冲区
         ensure_audio_capacity(g_current_audio_size + chunk_size);
         if (g_current_audio) {
             memcpy(g_current_audio + g_current_audio_size, model_audio + i, chunk_size * sizeof(float));
             g_current_audio_size += chunk_size;
         }
 
-        // 检查是否开始检测到语音
         if (!g_speech_started && SherpaOnnxVoiceActivityDetectorDetected(g_vad)) {
             g_speech_started = 1;
             clock_gettime(CLOCK_MONOTONIC, &g_last_recognize_time);
             LOGD(TAG, "检测到语音开始");
         }
 
-        // 如果已经开始语音，并且超过 0.2 秒，就进行一次模拟流式识别
         if (g_speech_started && get_elapsed_ms(&g_last_recognize_time) > 200) {
             const SherpaOnnxOfflineStream *stream = SherpaOnnxCreateOfflineStream(g_offline_recognizer);
             if (stream && g_current_audio && g_current_audio_size > 0) {
@@ -157,6 +160,10 @@ int process_asr_result(float *model_audio, int model_frames)
                 const SherpaOnnxOfflineRecognizerResult *result = SherpaOnnxGetOfflineStreamResult(stream);
                 if (result && strlen(result->text) > 0) {
                     LOGI(TAG, "识别中: %s", result->text);
+                    strncpy(g_current_asr_text_buffer, result->text, sizeof(g_current_asr_text_buffer) - 1);
+                    strncpy(g_last_asr_text, result->text, 1023);
+                    clock_gettime(CLOCK_MONOTONIC, &g_last_asr_update_time);
+                    g_asr_result_updated = 1;
                 }
                 SherpaOnnxDestroyOfflineRecognizerResult(result);
             }
@@ -166,7 +173,6 @@ int process_asr_result(float *model_audio, int model_frames)
             clock_gettime(CLOCK_MONOTONIC, &g_last_recognize_time);
         }
 
-        // 如果 buffer 太大，清理旧数据（只保留最近 10*VAD_WINDOW_SIZE）
         if (!g_speech_started && g_current_audio_size > 10 * VAD_WINDOW_SIZE) {
             int32_t keep_samples = 10 * VAD_WINDOW_SIZE;
             if (g_current_audio && keep_samples > 0) {
@@ -190,6 +196,7 @@ int process_asr_result(float *model_audio, int model_frames)
                 if (result && strlen(result->text) > 0)
                 {
                     LOGI(TAG, "识别结果: %s", result->text);
+                    strncpy(g_last_asr_text, result->text, 1023);
                     ret = 0;
                 }
 
@@ -201,7 +208,6 @@ int process_asr_result(float *model_audio, int model_frames)
             SherpaOnnxDestroySpeechSegment(segment);
             SherpaOnnxVoiceActivityDetectorPop(g_vad);
 
-            // 语音片段处理完毕，重置
             if (g_current_audio) {
                 free(g_current_audio);
                 g_current_audio = NULL;
