@@ -15,8 +15,10 @@
 #include "device.h"
 #include "select.h"
 #include "player.h"
+#include <string.h>
 
 #define TAG "DEVICE"
+#define VOLUME_EXP 2.0
 
 int g_button_fd = -1;   // 按键文件描述符
 BUTTON_STATE state = STATE_IDLE;    // 按键状态
@@ -24,50 +26,63 @@ unsigned long old, new;     // 用于判断长按和短按
 struct itimerval tv;        // 按键定时器结构体
 int g_current_vol = 0;      // 当前音量
 
-//获取音量控制元素（ALSA混音器元素）
 static int get_mixer_elem(snd_mixer_t** snd_mixer, snd_mixer_elem_t** mixer_elem)
 {
     snd_mixer_t *mixer = NULL;
     snd_mixer_elem_t *elem = NULL;
     snd_mixer_selem_id_t *sid = NULL;
-    // 打开一个空的混音设备
     if (snd_mixer_open(&mixer, 0) != 0) {
         LOGE(TAG, "snd_mixer_open error");
         return -1;
     }
-    // 附加声卡设备
     if (snd_mixer_attach(mixer, CARD) != 0) {
         LOGE(TAG, "snd_mixer_attach error");
         snd_mixer_close(mixer);
         return -1;
     }
-    // 注册混音器
     if (snd_mixer_selem_register(mixer, NULL, NULL) != 0) {
         LOGE(TAG, "snd_mixer_selem_register error");
         snd_mixer_close(mixer);
         return -1;
     }
-    // 加载混音器配置
     if (snd_mixer_load(mixer) != 0) {
         LOGE(TAG, "snd_mixer_load error");
         snd_mixer_close(mixer);
         return -1;
     }
-    // 设置元素ID
-    snd_mixer_selem_id_alloca(&sid);        // 栈上分配空间
-    snd_mixer_selem_id_set_index(sid, 0);   // 设置元素索引
-    snd_mixer_selem_id_set_name(sid, ELEM); // 设置元素名称
-    // 获取目标音量控制元素
+    snd_mixer_selem_id_alloca(&sid);
+    snd_mixer_selem_id_set_index(sid, 0);
+    snd_mixer_selem_id_set_name(sid, ELEM);
     elem = snd_mixer_find_selem(mixer, sid);
     if (elem == NULL) {
-        LOGE(TAG, "snd_mixer_find_selem error: 未找到音量元素[%s]", ELEM);
+        static const char *playback_priority[] = { "PCM", "Playback", "Master", "Speaker", "Line", "Headphone", NULL };
+        snd_mixer_elem_t *fallback = NULL;
+        for (elem = snd_mixer_first_elem(mixer); elem; elem = snd_mixer_elem_next(elem)) {
+            if (!snd_mixer_selem_has_playback_volume(elem)) continue;
+            snd_mixer_selem_id_t *eid;
+            snd_mixer_selem_id_alloca(&eid);
+            snd_mixer_selem_get_id(elem, eid);
+            const char *name = snd_mixer_selem_id_get_name(eid);
+            for (const char **p = playback_priority; *p; p++) {
+                if (name && strstr(name, *p)) {
+                    *snd_mixer = mixer;
+                    *mixer_elem = elem;
+                    return 0;
+                }
+            }
+            if (fallback == NULL) fallback = elem;
+        }
+        if (fallback) {
+            *snd_mixer = mixer;
+            *mixer_elem = fallback;
+            return 0;
+        }
+        LOGE(TAG, "未找到播放音量控件");
         snd_mixer_close(mixer);
         return -1;
     }
-    // 输出结果
     *snd_mixer = mixer;
     *mixer_elem = elem;
-
     return 0;
 }
 
@@ -96,8 +111,8 @@ int device_set_volume(int volume)
         snd_mixer_close(mixer);
         return -1;
     }
-    // 转换0-100音量到ALSA原生范围（四舍五入）
-    target_vol = vol_min + round((vol_max - vol_min) * (volume / 100.0));
+    double r = (volume <= 0) ? 0.0 : (volume >= 100) ? 1.0 : pow(volume / 100.0, VOLUME_EXP);
+    target_vol = (long)round(vol_min + (vol_max - vol_min) * r);
     // 设置所有声道音量（保证立体声平衡）
     if (snd_mixer_selem_set_playback_volume_all(elem, target_vol) < 0) {
         LOGE(TAG, "snd_mixer_selem_set_playback_volume_all error");
@@ -111,51 +126,34 @@ int device_set_volume(int volume)
     return 0; // 成功返回
 }
 
-//获取当前系统音量（0-100范围）
 int device_get_volume(int *volume)
 {
-    /*
-        通过此方法获取的音量会因为计算问题丢失精度。
-        所以采取全局变量的方法， 将0-63的音量范围映射到0-100
-    */
-    *volume = g_current_vol;
-    return 0;
-
-#if 0
-    snd_mixer_t *mixer = NULL;    // 混音设备句柄
-    snd_mixer_elem_t *elem = NULL; // 音量控制元素
-    long vol_min = 0;             // 音量最小值（ALSA原生范围）
-    long vol_max = 0;             // 音量最大值（ALSA原生范围）
-    long current_vol_alsa = 0;    // 当前音量（ALSA原生值）
-    int current_vol = 0;          // 当前音量（0-100，转换后）
-    // 获取混音器元素（失败直接返回）
-    if (get_mixer_elem(&mixer, &elem) != 0) {
-        fprintf(stderr, "[ERROR] get_mixer_elem error\n");
+    snd_mixer_t *mixer = NULL;
+    snd_mixer_elem_t *elem = NULL;
+    long vol_min = 0, vol_max = 0, current_alsa = 0;
+    if (get_mixer_elem(&mixer, &elem) != 0)
         return -1;
-    }
-    // 获取ALSA原生音量范围
     if (snd_mixer_selem_get_playback_volume_range(elem, &vol_min, &vol_max) < 0) {
-        fprintf(stderr, "[ERROR] snd_mixer_selem_get_playback_volume_range error\n");
         snd_mixer_close(mixer);
         return -1;
     }
-    // 获取左声道音量（默认立体声，左声道可代表整体音量）
-    if (snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &current_vol_alsa) < 0) {
-        fprintf(stderr, "[ERROR] snd_mixer_selem_get_playback_volume error\n");
+    if (snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &current_alsa) < 0) {
         snd_mixer_close(mixer);
         return -1;
     }
-    // 反向转换：ALSA原生值 -> 0-100（四舍五入）
-    current_vol = round((current_vol_alsa - vol_min) / (double)(vol_max - vol_min) * 100);
-    // 边界修正（防止因浮点误差导致超出0-100范围）
-    current_vol = (current_vol < 0) ? 0 : (current_vol > 100) ? 100 : current_vol;
-    // 关闭混音器（释放资源）
     snd_mixer_close(mixer);
-
-    // 返回当前音量给调用者
-    *volume = current_vol;
+    if (vol_max <= vol_min) {
+        *volume = g_current_vol;
+        return 0;
+    }
+    double linear = (current_alsa - vol_min) / (double)(vol_max - vol_min);
+    if (linear <= 0) *volume = 0;
+    else if (linear >= 1) *volume = 100;
+    else *volume = (int)round(100.0 * pow(linear, 1.0 / VOLUME_EXP));
+    if (*volume < 0) *volume = 0;
+    if (*volume > 100) *volume = 100;
+    g_current_vol = *volume;
     return 0;
-#endif
 }
 
 
@@ -168,111 +166,23 @@ int device_get_volume(int *volume)
  */
 int device_adjust_volume(int adjust_type)
 {
-    /*
-        通过此方法获取的音量会因为计算问题丢失精度。
-        所以采取全局变量的方法， 将0-63的音量范围映射到0-100
-    */
-
-    // 检查输入参数有效性（仅支持0或1）
     if (adjust_type != 0 && adjust_type != 1) {
-        LOGE(TAG, "device_adjust_volume: 无效参数！仅支持 0(减10%%)或 1(加10%%)");
+        LOGE(TAG, "device_adjust_volume: 无效参数");
         return -1;
     }
     int current_vol = 0;
-    int new_vol = 0;
-    // 1. 获取当前音量
-    if (device_get_volume(&current_vol) != 0) {
-        LOGE(TAG, "device_adjust_volume: 获取当前音量失败");
+    if (device_get_volume(&current_vol) != 0)
         return -1;
-    }
-
-    // 2. 计算目标音量（增减10%）
-    new_vol = (adjust_type == 1) ? (current_vol + 10) : (current_vol - 10);
-
-    // 3. 确保音量在0-100有效范围（边界截断）
+    int new_vol = (adjust_type == 1) ? (current_vol + 10) : (current_vol - 10);
     new_vol = (new_vol < 0) ? 0 : (new_vol > 100) ? 100 : new_vol;
-
-    // 4. 避免重复设置相同音量
     if (new_vol == current_vol) {
-        LOGI(TAG, "========[INFO] 音量调整：当前已处于%s音量（%d%%）========",
-                (adjust_type == 1) ? "最大" : "最小", current_vol);
-        
+        LOGI(TAG, "音量已处于%s（%d%%）", (adjust_type == 1) ? "最大" : "最小", current_vol);
         return 0;
     }
-
-    // 5. 设置新音量
-    if (device_set_volume(new_vol) != 0) {
-        LOGE(TAG, "device_adjust_volume: 设置新音量失败");
+    if (device_set_volume(new_vol) != 0)
         return -1;
-    }
-
-    // 输出调整结果（便于调试和日志记录）
-    LOGI(TAG, "========[INFO] 音量调整成功：%d%% -> %d%%（%s10%%）========",
-            current_vol, new_vol, (adjust_type == 1) ? "增加" : "减少");
-
-    // 6. 检查是否成功设置新音量
-    if(current_vol != new_vol)
-    {
-        return 0;
-    }
-    else
-    {
-        // 不太可能进入到这个分支，只是为了防止警告
-        return -1;
-    } 
-
-
-#if 0
-    int current_vol = 0;
-    int new_vol = 0;
-
-    // 检查输入参数有效性（仅支持0或1）
-    if (adjust_type != 0 && adjust_type != 1) {
-        fprintf(stderr, "[ERROR] device_adjust_volume: 无效参数！仅支持 0(减10%%)或 1(加10%%)\n");
-        return -1;
-    }
-
-    // 1. 获取当前音量
-    if (device_get_volume(&current_vol) != 0) {
-        fprintf(stderr, "[ERROR] device_adjust_volume: 获取当前音量失败\n");
-        return -1;
-    }
-
-    // 2. 计算目标音量（增减10%）
-    new_vol = (adjust_type == 1) ? (current_vol + 10) : (current_vol - 10);
-
-    // 3. 确保音量在0-100有效范围（边界截断）
-    new_vol = (new_vol < 0) ? 0 : (new_vol > 100) ? 100 : new_vol;
-
-    // 4. 避免重复设置相同音量
-    if (new_vol == current_vol) {
-        fprintf(stdout, "========[INFO] 音量调整：当前已处于%s音量（%d%%）========\n",
-                (adjust_type == 1) ? "最大" : "最小", current_vol);
-        
-        return 0;
-    }
-
-    // 5. 设置新音量
-    if (device_set_volume(new_vol) != 0) {
-        fprintf(stderr, "[ERROR] device_adjust_volume: 设置新音量失败\n");
-        return -1;
-    }
-
-    // 输出调整结果（便于调试和日志记录）
-    fprintf(stdout, "========[INFO] 音量调整成功：%d%% -> %d%%（%s10%%）========\n",
-            current_vol, new_vol, (adjust_type == 1) ? "增加" : "减少");
-
-    // 6. 检查是否成功设置新音量
-    if(current_vol != new_vol)
-    {
-        return 0;
-    }
-    else
-    {
-        // 不太可能进入到这个分支，只是为了防止警告
-        return -1;
-    } 
-#endif
+    LOGI(TAG, "音量 %d%% -> %d%%", current_vol, new_vol);
+    return 0;
 }
 
 

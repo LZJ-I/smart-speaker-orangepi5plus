@@ -3,7 +3,8 @@
 # ==============================配置参数==============================
 SHM_KEY="1234"
 SEM_KEY="1235"
-PIPE_PATH="../fifo"      # 管道路径
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PIPE_PATH="$SCRIPT_DIR/../fifo"      # 管道路径
 # ====================================================================
 
 # 1. 删除旧的共享内存
@@ -23,13 +24,12 @@ fi
 # 3. 确保管道目录和文件存在
 mkdir -p $PIPE_PATH  # 创建管道目录（如果不存在）
 
-# 检查并创建各个管道
+rm -f $PIPE_PATH/mpv_socket
 if [ ! -p "$PIPE_PATH/cmd_fifo" ]; then
     mkfifo $PIPE_PATH/cmd_fifo
     chmod 777 $PIPE_PATH/cmd_fifo
-    echo "创建音乐控制管道成功：$PIPE_PATH/cmd_fifo"
+    echo "创建播放控制管道: $PIPE_PATH/cmd_fifo"
 fi
-
 if [ ! -p "$PIPE_PATH/asr_fifo" ]; then
     mkfifo $PIPE_PATH/asr_fifo
     chmod 777 $PIPE_PATH/asr_fifo
@@ -48,4 +48,20 @@ if [ ! -p "$PIPE_PATH/tts_fifo" ]; then
     echo "创建tts语音合成管道成功：$PIPE_PATH/tts_fifo"
 fi
 
+if [ ! -p "$PIPE_PATH/asr_ctrl_fifo" ]; then
+    mkfifo $PIPE_PATH/asr_ctrl_fifo
+    chmod 777 $PIPE_PATH/asr_ctrl_fifo
+    echo "创建asr控制管道成功：$PIPE_PATH/asr_ctrl_fifo"
+fi
 
+if [ ! -p "$PIPE_PATH/player_ctrl_fifo" ]; then
+    mkfifo $PIPE_PATH/player_ctrl_fifo
+    chmod 777 $PIPE_PATH/player_ctrl_fifo
+    echo "创建player控制管道成功：$PIPE_PATH/player_ctrl_fifo"
+fi
+
+if [ ! -p "$PIPE_PATH/tts_wake_done_fifo" ]; then
+    mkfifo $PIPE_PATH/tts_wake_done_fifo
+    chmod 777 $PIPE_PATH/tts_wake_done_fifo
+    echo "创建tts唤醒完成管道成功：$PIPE_PATH/tts_wake_done_fifo"
+fi

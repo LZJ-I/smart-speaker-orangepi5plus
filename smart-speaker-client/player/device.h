@@ -4,9 +4,7 @@
 #include <alsa/asoundlib.h>
 
 
-// 声卡名 (使用aplay -l 查看)
-// #define CARD "hw:AudioPCI"   // 虚拟机的声卡名
-#define CARD "hw:audiocodec"           // 嵌入式设备的声卡名
+#define CARD "hw:3"
 // 控制单元(使用amixer 查看)
 // #define ELEM "Master"        // 虚拟机的控制单元
 #define ELEM "lineout volume"           // 嵌入式设备的控制单元
