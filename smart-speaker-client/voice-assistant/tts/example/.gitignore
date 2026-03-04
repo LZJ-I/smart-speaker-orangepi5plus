@@ -1,4 +1,5 @@
 # build
+*.o
 tts_test
 play_wav
 

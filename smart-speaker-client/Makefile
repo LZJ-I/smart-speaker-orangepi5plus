@@ -36,6 +36,7 @@ stop:
 clean:
 	$(MAKE) -C voice-assistant/main_asr_kws clean
 	$(MAKE) -C voice-assistant/main_tts clean
+	$(MAKE) -C voice-assistant/tts/example clean
 	$(MAKE) -C player clean
 	$(MAKE) -C supervisor clean
 	$(MAKE) -C tools clean

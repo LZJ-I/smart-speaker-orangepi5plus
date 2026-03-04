@@ -17,15 +17,14 @@ all: $(TARGETS)
 
 tts_test: $(TTS_OBJS)
 	$(CC) -o $@ $(TTS_OBJS) $(LIBS)
+	rm -f $(TTS_OBJS) $(WAV_OBJS) ../*.o
 
 play_wav: $(WAV_OBJS)
 	$(CC) -o $@ $(WAV_OBJS) $(LIBS)
-	rm -f $(TTS_OBJS) $(WAV_OBJS)
-	rm -f ../*.o
+	rm -f $(TTS_OBJS) $(WAV_OBJS) ../*.o
 
 %.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 clean:
-	rm -f $(TTS_OBJS) $(WAV_OBJS) $(TARGETS)
-	rm -f ../*.o
+	rm -f $(TARGETS) *.o ../*.o
