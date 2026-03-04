@@ -1,16 +1,22 @@
 CC = gcc
 TARGET = ../../tts_process
-CFLAGS = -Wall -g -DPROCESS_MODE -I../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -I../tts -I../common -I..
+CFLAGS = -Wall -g -DPROCESS_MODE -I../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -I../tts -I../common -I.. -I../../ipc
 LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -lpthread -L../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/lib
 
 all: $(TARGET)
 
-$(TARGET): main.o ../tts/alsa_output.o ../tts/sherpa_tts.o
-	$(CC) -o $(TARGET) main.o ../tts/alsa_output.o ../tts/sherpa_tts.o $(LIBS)
-	rm -f main.o ../tts/alsa_output.o ../tts/sherpa_tts.o
+$(TARGET): main.o tts_playback.o tts_ipc_handler.o ../tts/alsa_output.o ../tts/sherpa_tts.o ../../ipc/ipc_message.o
+	$(CC) -o $(TARGET) main.o tts_playback.o tts_ipc_handler.o ../tts/alsa_output.o ../tts/sherpa_tts.o ../../ipc/ipc_message.o $(LIBS)
+	rm -f main.o tts_playback.o tts_ipc_handler.o ../tts/alsa_output.o ../tts/sherpa_tts.o ../../ipc/ipc_message.o
 
 main.o: main.c
 	$(CC) $(CFLAGS) -c main.c -o main.o
+
+tts_playback.o: tts_playback.c tts_playback.h
+	$(CC) $(CFLAGS) -c tts_playback.c -o tts_playback.o
+
+tts_ipc_handler.o: tts_ipc_handler.c tts_ipc_handler.h
+	$(CC) $(CFLAGS) -c tts_ipc_handler.c -o tts_ipc_handler.o
 
 ../tts/alsa_output.o: ../tts/alsa_output.c
 	$(CC) $(CFLAGS) -c ../tts/alsa_output.c -o ../tts/alsa_output.o
@@ -18,5 +24,8 @@ main.o: main.c
 ../tts/sherpa_tts.o: ../tts/sherpa_tts.c
 	$(CC) $(CFLAGS) -c ../tts/sherpa_tts.c -o ../tts/sherpa_tts.o
 
+../../ipc/ipc_message.o: ../../ipc/ipc_message.c
+	$(CC) $(CFLAGS) -c ../../ipc/ipc_message.c -o ../../ipc/ipc_message.o
+
 clean:
-	rm -f main.o ../tts/alsa_output.o ../tts/sherpa_tts.o $(TARGET)
+	rm -f main.o tts_playback.o tts_ipc_handler.o ../tts/alsa_output.o ../tts/sherpa_tts.o ../../ipc/ipc_message.o $(TARGET)

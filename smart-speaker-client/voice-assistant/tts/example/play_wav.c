@@ -105,9 +105,12 @@ static int play_wav_file(const char *filename, const char *alsa_device) {
     uint32_t bytes_per_sample = header.bits_per_sample / 8;
     uint32_t buffer_size_bytes = PLAYBACK_BUFFER_SIZE * bytes_per_sample;
     uint8_t *buffer = (uint8_t *)malloc(buffer_size_bytes);
+    uint8_t *stereo_buf = (uint8_t *)malloc(buffer_size_bytes * 2);
     
-    if (buffer == NULL) {
+    if (buffer == NULL || stereo_buf == NULL) {
         LOGE(TAG, "内存分配失败");
+        free(buffer);
+        free(stereo_buf);
         fclose(wav_file);
         cleanup_alsa_output();
         return -1;
@@ -128,11 +131,15 @@ static int play_wav_file(const char *filename, const char *alsa_device) {
         }
         
         int32_t num_samples = bytes_read / bytes_per_sample;
-        int ret = snd_pcm_writei(g_pcm_handle, buffer, num_samples);
+        for (int32_t i = 0; i < num_samples; i++) {
+            memcpy(stereo_buf + i * bytes_per_sample * 2, buffer + i * bytes_per_sample, bytes_per_sample);
+            memcpy(stereo_buf + i * bytes_per_sample * 2 + bytes_per_sample, buffer + i * bytes_per_sample, bytes_per_sample);
+        }
+        int ret = snd_pcm_writei(g_pcm_handle, stereo_buf, num_samples);
         
         if (ret == -EPIPE) {
             snd_pcm_prepare(g_pcm_handle);
-            ret = snd_pcm_writei(g_pcm_handle, buffer, num_samples);
+            ret = snd_pcm_writei(g_pcm_handle, stereo_buf, num_samples);
         }
         
         if (ret < 0) {
@@ -148,6 +155,7 @@ static int play_wav_file(const char *filename, const char *alsa_device) {
     }
     
     free(buffer);
+    free(stereo_buf);
     fclose(wav_file);
     cleanup_alsa_output();
     

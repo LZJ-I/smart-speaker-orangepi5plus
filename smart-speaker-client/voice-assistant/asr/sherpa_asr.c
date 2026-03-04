@@ -162,6 +162,7 @@ int process_asr_result(float *model_audio, int model_frames)
                     LOGI(TAG, "识别中: %s", result->text);
                     strncpy(g_current_asr_text_buffer, result->text, sizeof(g_current_asr_text_buffer) - 1);
                     strncpy(g_last_asr_text, result->text, 1023);
+                    g_last_asr_text[1023] = '\0';
                     clock_gettime(CLOCK_MONOTONIC, &g_last_asr_update_time);
                     g_asr_result_updated = 1;
                 }
@@ -197,6 +198,7 @@ int process_asr_result(float *model_audio, int model_frames)
                 {
                     LOGI(TAG, "识别结果: %s", result->text);
                     strncpy(g_last_asr_text, result->text, 1023);
+                    g_last_asr_text[1023] = '\0';
                     ret = 0;
                 }
 

@@ -1,9 +1,14 @@
 #include "alsa_output.h"
 #include <sys/types.h>
+#include <time.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#define DEBUG_LOG_PATH "/home/lzj/smart-speaker-orangepi5plus/smart-speaker-client/.cursor/debug-55e7c0.log"
 #include <sys/wait.h>
 
-// 全局PCM句柄
 snd_pcm_t *g_pcm_handle = NULL;
+unsigned int g_alsa_playback_rate = 0;
 
 void cleanup_alsa_output(void) {
     if (g_pcm_handle != NULL) {
@@ -13,7 +18,42 @@ void cleanup_alsa_output(void) {
     }
 }
 
+int pcm_write_all(snd_pcm_t *pcm, const int16_t *buf, snd_pcm_uframes_t frames) {
+    while (frames > 0) {
+        snd_pcm_sframes_t n = snd_pcm_writei(pcm, buf, frames);
+        if (n == -EPIPE) {
+            snd_pcm_prepare(pcm);
+            continue;
+        }
+        if (n < 0) {
+            n = snd_pcm_recover(pcm, (int)n, 1);
+            if (n < 0) return (int)n;
+            continue;
+        }
+        buf += n * CHANNELS;
+        frames -= (snd_pcm_uframes_t)n;
+    }
+    return 0;
+}
 
+void pcm_write_silence(snd_pcm_t *pcm) {
+    snd_pcm_uframes_t buffer_size = 0, period_size = 0;
+    if (snd_pcm_get_params(pcm, &buffer_size, &period_size) < 0 || period_size == 0) {
+        return;
+    }
+    snd_pcm_uframes_t to_write = period_size * 2;
+    if (to_write > buffer_size) to_write = buffer_size;
+    static int16_t *silence_buf = NULL;
+    static snd_pcm_uframes_t silence_buf_frames = 0;
+    if (silence_buf_frames < to_write) {
+        free(silence_buf);
+        silence_buf = (int16_t *)calloc((size_t)to_write * CHANNELS, sizeof(int16_t));
+        silence_buf_frames = silence_buf ? to_write : 0;
+    }
+    if (silence_buf && silence_buf_frames >= to_write) {
+        pcm_write_all(pcm, silence_buf, to_write);
+    }
+}
 
 // aplay -l最大缓冲区大小
 #define BUFFER_SIZE 1024
@@ -171,9 +211,8 @@ int init_alsa_output(unsigned int rate, char* playback_device_name)
         return -1;
     }
     if(rate != actual_rate)
-    {
         fprintf(stderr, "[WARNING] 实际采样率: %d Hz, 请求采样率: %d Hz（重采样会自动适配）\n", actual_rate, rate);
-    }
+    g_alsa_playback_rate = actual_rate;
 
     // 7. 设置缓冲区周期大小（要设置足够的大，因为模型输出的音频数据量较大）
     snd_pcm_uframes_t period_size = PERIOD_SIZE;
@@ -186,6 +225,14 @@ int init_alsa_output(unsigned int rate, char* playback_device_name)
     if(period_size != PERIOD_SIZE)
     {
         fprintf(stderr, "[WARNING] 实际周期大小: %ld, 请求周期大小: %d\n", period_size, PERIOD_SIZE);
+    }
+    {
+        FILE *f = fopen(DEBUG_LOG_PATH, "a");
+        if (f) {
+            fprintf(f, "{\"sessionId\":\"55e7c0\",\"message\":\"alsa_period\",\"data\":{\"period_frames\":%lu,\"rate\":%u,\"max_tail_ms\":%lu},\"timestamp\":%lu}\n",
+                (unsigned long)period_size, actual_rate, (unsigned long)(period_size * 1000 / actual_rate), (unsigned long)time(NULL)*1000);
+            fclose(f);
+        }
     }
 
     // 8. 应用参数并准备设备

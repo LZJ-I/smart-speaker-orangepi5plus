@@ -83,12 +83,19 @@ void convert_to_pcm(const float* samples, int16_t* pcm_data, int32_t n) {
 void play_audio(int16_t* pcm_data, int32_t n) {
     if (g_pcm_handle == NULL) return;
     
-    int ret = snd_pcm_writei(g_pcm_handle, pcm_data, n);
+    int16_t *stereo_buf = malloc(n * 2 * sizeof(int16_t));
+    if (stereo_buf == NULL) return;
+    for (int32_t i = 0; i < n; i++) {
+        stereo_buf[i * 2] = pcm_data[i];
+        stereo_buf[i * 2 + 1] = pcm_data[i];
+    }
+    int ret = snd_pcm_writei(g_pcm_handle, stereo_buf, n);
     if (ret == -EPIPE) {
         LOGW(TAG, "ALSA缓冲区欠载，重新准备设备");
         snd_pcm_prepare(g_pcm_handle);
-        ret = snd_pcm_writei(g_pcm_handle, pcm_data, n);
+        ret = snd_pcm_writei(g_pcm_handle, stereo_buf, n);
     }
+    free(stereo_buf);
     if (ret < 0) {
         LOGE(TAG, "ALSA写入失败: %s", snd_strerror(ret));
     }

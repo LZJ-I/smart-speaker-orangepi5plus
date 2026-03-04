@@ -1,6 +1,6 @@
 # LLM 示例程序
 
-本目录包含基于阿里云 Qwen 大语言模型的智能助手示例程序。
+本目录包含基于阿里云 Qwen 大语言模型的智能助手示例程序。主流程中 `player/select.c` 在规则未命中时调用 `voice-assistant/llm` 做兜底对话；详见 [smart-speaker-client/README.md](../../../README.md)。
 
 ## 功能特性
 

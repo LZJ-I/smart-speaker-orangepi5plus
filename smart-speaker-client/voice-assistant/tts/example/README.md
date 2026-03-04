@@ -61,6 +61,10 @@ make
 ./tts_test -t "你好世界，这是一段测试语音。" -o output.wav
 ```
 
+#### 4. 生成智能音箱模式切换提示音（项目内使用）
+
+项目根目录下执行 `tools/gen_mode_tts_wav.sh` 会调用本目录的 `tts_test` 生成 `assets/tts/mode_order.wav`、`assets/tts/mode_single.wav`（「已切换到顺序播放模式」「已切换到单曲循环模式」）。
+
 ## play_wav 使用说明
 
 ### 功能说明
