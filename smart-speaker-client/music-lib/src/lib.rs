@@ -35,6 +35,10 @@ pub struct CMusicInfo {
 pub struct CMusicSearchResult {
     results: *mut CMusicInfo,
     count: usize,
+    page: u32,
+    page_size: u32,
+    total: u32,
+    total_pages: u32,
 }
 
 /// 获取音乐下载链接
@@ -210,6 +214,17 @@ pub extern "C" fn music_search(
     platform: *const c_char,
     result: *mut CMusicSearchResult,
 ) -> Result {
+    music_search_page(keyword, platform, 1, 10, result)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn music_search_page(
+    keyword: *const c_char,
+    platform: *const c_char,
+    page: u32,
+    page_size: u32,
+    result: *mut CMusicSearchResult,
+) -> Result {
     if keyword.is_null() || platform.is_null() || result.is_null() {
         return Result::InvalidParam;
     }
@@ -217,19 +232,32 @@ pub extern "C" fn music_search(
     let keyword = unsafe { CStr::from_ptr(keyword).to_str().unwrap() };
     let platform = unsafe { CStr::from_ptr(platform).to_str().unwrap() };
     
-    let songs = match search::search_music(keyword, platform) {
+    let search_ret = match search::search_music_paged(keyword, platform, page, page_size) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("搜索错误: {}", e);
             return Result::ApiError;
         }
     };
-    
+    let songs = search_ret.songs;
+    let total = search_ret.total as u32;
+    let ret_page = search_ret.page;
+    let ret_page_size = search_ret.page_size;
+    let total_pages = if ret_page_size == 0 {
+        0
+    } else {
+        ((total + ret_page_size - 1) / ret_page_size).max(1)
+    };
+
     let count = songs.len();
     if count == 0 {
         unsafe {
             (*result).results = std::ptr::null_mut();
             (*result).count = 0;
+            (*result).page = ret_page;
+            (*result).page_size = ret_page_size;
+            (*result).total = total;
+            (*result).total_pages = total_pages;
         }
         return Result::Ok;
     }
@@ -302,6 +330,10 @@ pub extern "C" fn music_search(
     unsafe {
         (*result).results = results_ptr;
         (*result).count = count;
+        (*result).page = ret_page;
+        (*result).page_size = ret_page_size;
+        (*result).total = total;
+        (*result).total_pages = total_pages;
     }
     
     Result::Ok
@@ -339,5 +371,9 @@ pub extern "C" fn music_free_search_result(result: *mut CMusicSearchResult) {
     unsafe {
         (*result).results = std::ptr::null_mut();
         (*result).count = 0;
+        (*result).page = 0;
+        (*result).page_size = 0;
+        (*result).total = 0;
+        (*result).total_pages = 0;
     }
 }

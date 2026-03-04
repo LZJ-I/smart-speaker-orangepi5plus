@@ -25,6 +25,10 @@ typedef struct {
 typedef struct {
     music_info_t* results;
     size_t count;
+    uint32_t page;
+    uint32_t page_size;
+    uint32_t total;
+    uint32_t total_pages;
 } music_search_result_t;
 
 char* music_get_url(
@@ -36,6 +40,13 @@ char* music_get_url(
 music_result_t music_search(
     const char* keyword,
     const char* platform,
+    music_search_result_t* result
+);
+music_result_t music_search_page(
+    const char* keyword,
+    const char* platform,
+    uint32_t page,
+    uint32_t page_size,
     music_search_result_t* result
 );
 

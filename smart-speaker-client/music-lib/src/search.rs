@@ -20,6 +20,13 @@ pub struct SongInfo {
     pub source: String,
 }
 
+pub struct SearchPage {
+    pub songs: Vec<SongInfo>,
+    pub total: usize,
+    pub page: u32,
+    pub page_size: u32,
+}
+
 /// QQ 音乐 API 响应结构体
 #[derive(Deserialize)]
 struct QQMusicResponse {
@@ -35,6 +42,7 @@ struct QQMusicData {
 /// QQ 音乐歌曲列表结构体
 #[derive(Deserialize)]
 struct QQMusicSong {
+    totalnum: Option<u32>,
     list: Vec<QQMusicSongItem>,
 }
 
@@ -62,6 +70,8 @@ struct NeteaseMusicResponse {
 /// 网易云音乐搜索结果结构体
 #[derive(Deserialize)]
 struct NeteaseMusicResult {
+    #[serde(rename = "songCount")]
+    song_count: Option<u32>,
     songs: Vec<NeteaseMusicSong>,
 }
 
@@ -93,8 +103,13 @@ struct NeteaseMusicAlbum {
 /// 
 /// # 返回
 /// 成功时返回歌曲列表，失败时返回错误信息
-pub fn search_qq_music(keyword: &str) -> Result<Vec<SongInfo>, String> {
-    let url = format!("https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w={}", keyword);
+pub fn search_qq_music_paged(keyword: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
+    let page = if page == 0 { 1 } else { page };
+    let page_size = if page_size == 0 { 10 } else { page_size };
+    let url = format!(
+        "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w={}&p={}&n={}",
+        keyword, page, page_size
+    );
     
     let resp = Client::new()
         .get(&url)
@@ -123,7 +138,13 @@ pub fn search_qq_music(keyword: &str) -> Result<Vec<SongInfo>, String> {
         });
     }
     
-    Ok(songs)
+    let total = qq_resp.data.song.totalnum.unwrap_or(songs.len() as u32) as usize;
+    Ok(SearchPage {
+        songs,
+        total,
+        page,
+        page_size,
+    })
 }
 
 /// 从网易云音乐搜索歌曲
@@ -133,8 +154,14 @@ pub fn search_qq_music(keyword: &str) -> Result<Vec<SongInfo>, String> {
 /// 
 /// # 返回
 /// 成功时返回歌曲列表，失败时返回错误信息
-pub fn search_netease_music(keyword: &str) -> Result<Vec<SongInfo>, String> {
-    let url = format!("https://music.163.com/api/search/get/?s={}&type=1&limit=10", keyword);
+pub fn search_netease_music_paged(keyword: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
+    let page = if page == 0 { 1 } else { page };
+    let page_size = if page_size == 0 { 10 } else { page_size };
+    let offset = (page - 1) * page_size;
+    let url = format!(
+        "https://music.163.com/api/search/get/?s={}&type=1&limit={}&offset={}",
+        keyword, page_size, offset
+    );
     
     let resp = Client::new()
         .get(&url)
@@ -144,7 +171,9 @@ pub fn search_netease_music(keyword: &str) -> Result<Vec<SongInfo>, String> {
         .map_err(|e| e.to_string())?;
     
     let mut songs = Vec::new();
+    let mut total = 0usize;
     if let Some(result) = resp.result {
+        total = result.song_count.unwrap_or(result.songs.len() as u32) as usize;
         for item in result.songs {
             let artist = item.artists.first()
                 .map(|a| a.name.clone())
@@ -164,7 +193,12 @@ pub fn search_netease_music(keyword: &str) -> Result<Vec<SongInfo>, String> {
         }
     }
     
-    Ok(songs)
+    Ok(SearchPage {
+        songs,
+        total,
+        page,
+        page_size,
+    })
 }
 
 /// 搜索歌曲 (统一搜索，支持多平台)
@@ -176,6 +210,10 @@ pub fn search_netease_music(keyword: &str) -> Result<Vec<SongInfo>, String> {
 /// # 返回
 /// 成功时返回歌曲列表，失败时返回错误信息
 pub fn search_music(keyword: &str, platform: &str) -> Result<Vec<SongInfo>, String> {
+    Ok(search_music_paged(keyword, platform, 1, 10)?.songs)
+}
+
+pub fn search_music_paged(keyword: &str, platform: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
     // 验证关键词
     if keyword.trim().is_empty() {
         return Err("搜索关键词不能为空".to_string());
@@ -191,12 +229,12 @@ pub fn search_music(keyword: &str, platform: &str) -> Result<Vec<SongInfo>, Stri
     }
     
     match platform {
-        "tx" => search_qq_music(keyword),
-        "wy" => search_netease_music(keyword),
+        "tx" => search_qq_music_paged(keyword, page, page_size),
+        "wy" => search_netease_music_paged(keyword, page, page_size),
         "auto" => {
-            match search_qq_music(keyword) {
-                Ok(songs) if !songs.is_empty() => Ok(songs),
-                _ => search_netease_music(keyword),
+            match search_qq_music_paged(keyword, page, page_size) {
+                Ok(ret) if !ret.songs.is_empty() => Ok(ret),
+                _ => search_netease_music_paged(keyword, page, page_size),
             }
         }
         _ => unreachable!("平台验证已通过"),
