@@ -19,77 +19,12 @@
 #include "device.h"
 #include "link.h"
 #include "player.h"
+#include "socket_report.h"
 
 #define TAG "SOCKET"
 
 int g_socket_fd = -1;       // socket文件描述符
 pthread_t g_report_tid;     // 定时上报数据线程的线程id
-
-// 发送JSON数据给服务器
-static int socket_send_data(json_object *data)
-{
-    char buf[1024] = {0};
-    // 把json数据转换成字符串
-    const char *json_str = json_object_to_json_string(data);
-    if(NULL == json_str)
-    {
-        LOGE(TAG, "JSON转换失败");
-        return -1;
-    }
-    // 判断长度
-    int len = strlen(json_str);
-    // 封装成一个包
-    memcpy(buf, &len, sizeof(len));
-    memcpy(buf + sizeof(len), json_str, len);
-    // 发送数据
-    if(-1 == send(g_socket_fd, buf, len + sizeof(len), 0))
-    {
-        LOGE(TAG, "发送失败: %s", strerror(errno));
-        return -1;
-    }
-
-    // 释放json对象
-    json_object_put(data);
-    return 0;
-}
-
-// 用于定时上报数据给服务器
-static void* report_thread(void *arg)
-{
-    // 发送数据给服务器
-    // 当前歌曲、播放模式、播放状态、设备id、音量
-    int volume;
-    while(1)
-    {
-        // 读取共享内存数据
-        Shm_Data data = {0};
-        shm_get(&data);
-        // 获取音量
-        device_get_volume(&volume);
-        // 创建json对象
-        json_object *json = json_object_new_object();
-        // 添加数据
-        json_object_object_add(json, "cmd", json_object_new_string("device_report"));  // 数据类型
-        json_object_object_add(json, "cur_singer", json_object_new_string(data.current_singer));    // 当前音乐
-        json_object_object_add(json, "cur_music", json_object_new_string(data.current_music));    // 当前音乐
-        json_object_object_add(json, "cur_mode", json_object_new_int(data.current_mode));      // 播放模式
-        if(g_current_state == PLAY_STATE_STOP){
-            json_object_object_add(json, "state", json_object_new_string("stop"));
-        }else if(g_current_state == PLAY_STATE_PLAY && g_current_suspend == PLAY_SUSPEND_NO){
-            json_object_object_add(json, "state", json_object_new_string("play"));
-        }else if(g_current_state == PLAY_STATE_PLAY && g_current_suspend == PLAY_SUSPEND_YES){
-            json_object_object_add(json, "state", json_object_new_string("suspend"));
-        }
-        json_object_object_add(json, "deviceid", json_object_new_string(DEVICE_ID));
-        json_object_object_add(json, "cur_volume", json_object_new_int(volume));
-        
-        // 发送给服务器
-        socket_send_data(json);
-        // printf("服务器上报状态成功！\n");
-        sleep(1);
-    }
-    return NULL;
-}
 
 // 初始化socket连接
 int socket_init()
@@ -128,9 +63,7 @@ int socket_init()
         g_max_fd = (g_max_fd > g_socket_fd ? g_max_fd : g_socket_fd);
         // 每隔五秒上报一次次数据 （当前歌曲、模式、音量、状态'暂停播放停止'）
         // 创建一个线程用于上报
-        if(pthread_create(&g_report_tid, NULL, report_thread, NULL) != 0)
-        {
-            LOGE(TAG, "创建上报线程失败");
+        if (socket_report_start_thread(&g_report_tid) != 0) {
             close(g_socket_fd);
             return -1;
         }
@@ -237,10 +170,10 @@ void socket_start_play()
 {
     // 开始播放
     player_start_play();
-    // 判断结果（mplayer进程是否启动成功）
+    // 判断结果（mpv进程是否启动成功）
     char result[256] = {0};
     // 执行命令并获取结果
-    FILE *fp = popen("pgrep mplayer", "r"); // 用于查找名称包含"mplayer"的进程的PID（进程ID）
+    FILE *fp = popen("pgrep -f 'player/run'", "r"); // 用于查找名称包含"mpv"的进程的PID
     fgets(result, sizeof(result), fp);  // 读取进程ID（如果有）
     pclose(fp);
     // 发送判断结果给服务器
@@ -264,13 +197,13 @@ void socket_stop_play()
 {
     // 停止播放
     player_stop_play();
-    // 判断结果（mplayer进程是否停止成功）
+    // 判断结果（mpv进程是否停止成功）
     char result[256] = {0};
     // 执行命令并获取结果
-    FILE *fp = popen("pgrep mplayer", "r"); // 用于查找名称包含"mplayer"的进程的PID（进程ID）
+    FILE *fp = popen("pgrep -f 'player/run'", "r"); // 用于查找名称包含"mpv"的进程的PID
     fgets(result, sizeof(result), fp);  // 读取进程ID（如果有）
     pclose(fp);
-    // 判断结果（mplayer进程是否停止成功）
+    // 判断结果（mpv进程是否停止成功）
     // 创建回复JSON对象
     json_object *json = json_object_new_object();  
     json_object_object_add(json, "cmd", json_object_new_string("reply_app_stop_play"));
@@ -412,35 +345,6 @@ void socket_sub_volume()
         // 音量设置失败
         json_object *json = json_object_new_object();  
         json_object_object_add(json, "cmd", json_object_new_string("reply_app_sub_volume"));
-        json_object_object_add(json, "result", json_object_new_string("failure"));
-        socket_send_data(json);
-    }
-}
-
-// 处理服务器设置随机播放模式请求
-void socket_set_random_mode()
-{
-    Shm_Data current_data;
-    Shm_Data next_data;
-    // 获取共享内存，获取当前播放模式
-    shm_get(&current_data);
-    // 设置随机播放模式
-    player_set_mode(RANDOM_PLAY);
-    // 获取当前播放模式
-    shm_get(&next_data);
-    if(next_data.current_mode == RANDOM_PLAY)
-    {
-        // 回复服务器
-        json_object *json = json_object_new_object();  
-        json_object_object_add(json, "cmd", json_object_new_string("reply_app_random_mode"));
-        json_object_object_add(json, "result", json_object_new_string("success"));
-        socket_send_data(json);
-    }
-    else
-    {
-        // 设置失败
-        json_object *json = json_object_new_object();  
-        json_object_object_add(json, "cmd", json_object_new_string("reply_app_random_mode"));
         json_object_object_add(json, "result", json_object_new_string("failure"));
         socket_send_data(json);
     }

@@ -45,8 +45,6 @@ void socket_sub_volume();
 void socket_set_order_mode();
 // 处理APP请求的 设置单曲循环播放模式
 void socket_set_single_mode();
-// 处理APP请求的 设置随机播放模式
-void socket_set_random_mode();
 
 // 处理服务器获取当前音乐列表请求（主动上传新的歌曲）
 void socket_upload_music_list();
