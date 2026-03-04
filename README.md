@@ -61,4 +61,14 @@ wget https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.25/sherpa-onn
 tar -jxf sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu.tar.bz2
 ```
 
-## 编译
+## 编译与运行
+
+在 `smart-speaker-client` 目录下：
+
+```bash
+cd smart-speaker-client
+make
+make run
+```
+
+停止：`make stop`。详细模块说明、FIFO、播放模式与语音恢复策略见 [smart-speaker-client/README.md](smart-speaker-client/README.md)，技术文档见 [smart-speaker-client/docs/smart-speaker-client-技术文档索引.md](smart-speaker-client/docs/smart-speaker-client-技术文档索引.md)。
