@@ -8,15 +8,19 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
+#include <poll.h>
 
 #define LOG_LEVEL 4
 #include "../../debug_log.h"
 #include "../common/ipc_protocol.h"
+#include "../../ipc/ipc_message.h"
 #include "../common/alsa.h"
 #include "../common/mysamplerate.h"
 #include "../asr/sherpa_asr.h"
 #include "../kws/sherpa_kws.h"
-#include "../llm/llm.h"
+#include "asr_kws_constants.h"
+#include "asr_kws_types.h"
+#include "asr_kws_pipe.h"
 
 #define TAG "ASR_KWS_MAIN"
 
@@ -28,146 +32,46 @@ int running = 1;
 int asr_fd = -1;
 int kws_fd = -1;
 int tts_fd = -1;
+int asr_ctrl_fd = -1;
 int16_t *alsa_buf = NULL;
-
-enum SherpaOnnxState {
-    STATE_KWS,
-    STATE_ASR
-};
+uint32_t g_tts_seq = 0;
 
 int current_state = STATE_KWS;
-
-enum OnlineMode {
-    ONLINE_MODE_NO,
-    ONLINE_MODE_YES
-};
-
 enum OnlineMode g_current_online_mode = ONLINE_MODE_YES;
-
-#define ASR_TIMEOUT_SECONDS 5
-
-void sigint_handler(int sig) {
-    LOGI(TAG, "收到退出信号，正在清理资源...");
-    if (alsa_buf != NULL) {
-        free(alsa_buf);
-    }
-    if (asr_fd != -1) close(asr_fd);
-    if (kws_fd != -1) close(kws_fd);
-    if (tts_fd != -1) close(tts_fd);
-    cleanup_sherpa_asr();
-    cleanup_resampler();
-    cleanup_alsa();
-    cleanup_sherpa_kws();
-    LOGI(TAG, "ASR+KWS进程退出");
-    running = 0;
-    exit(0);
-}
-
-static void offline_handler(int s) {
-    LOGI(TAG, "收到SIGUSR1信号，切换到离线模式");
-    g_current_online_mode = ONLINE_MODE_NO;
-}
-
-static void online_handler(int s) {
-    LOGI(TAG, "收到SIGUSR2信号，切换到在线模式");
-    g_current_online_mode = ONLINE_MODE_YES;
-}
-
-static int open_pipes(void) {
-    if (asr_fd != -1) {
-        close(asr_fd);
-        asr_fd = -1;
-    }
-    if (kws_fd != -1) {
-        close(kws_fd);
-        kws_fd = -1;
-    }
-    if (tts_fd != -1) {
-        close(tts_fd);
-        tts_fd = -1;
-    }
-
-    mkdir(FIFO_DIR_PATH, 0777);
-    if (access(ASR_FIFO_PATH, F_OK) == -1) {
-        if (mkfifo(ASR_FIFO_PATH, 0666) == -1 && errno != EEXIST) {
-            LOGW(TAG, "创建ASR管道失败: %s", strerror(errno));
-        }
-    }
-    if (access(KWS_FIFO_PATH, F_OK) == -1) {
-        if (mkfifo(KWS_FIFO_PATH, 0666) == -1 && errno != EEXIST) {
-            LOGW(TAG, "创建KWS管道失败: %s", strerror(errno));
-        }
-    }
-    if (access(TTS_FIFO_PATH, F_OK) == -1) {
-        if (mkfifo(TTS_FIFO_PATH, 0666) == -1 && errno != EEXIST) {
-            LOGW(TAG, "创建TTS管道失败: %s", strerror(errno));
-        }
-    }
-
-    LOGD(TAG, "尝试打开ASR管道");
-    //asr_fd = open(ASR_FIFO_PATH, O_WRONLY);
-    LOGD(TAG, "尝试打开KWS管道");
-    //kws_fd = open(KWS_FIFO_PATH, O_WRONLY);
-    LOGD(TAG, "尝试打开TTS管道");
-    tts_fd = open(TTS_FIFO_PATH, O_WRONLY);
-
-    if (asr_fd != -1 || kws_fd != -1 || tts_fd != -1) {
-        LOGI(TAG, "管道打开成功！asr_fd=%d, kws_fd=%d, tts_fd=%d", asr_fd, kws_fd, tts_fd);
-    }
-    return 0;
-}
 
 int send_tts_command(IPCCommandType type, const char *text, const char *filename) {
     if (tts_fd == -1) {
-        LOGW(TAG, "TTS管道未打开");
-        return -1;
+        asr_kws_pipe_open(&asr_fd, &kws_fd, &tts_fd, &asr_ctrl_fd);
+        if (tts_fd == -1) {
+            LOGW(TAG, "TTS管道未打开");
+            return -1;
+        }
     }
 
-    IPCMessage msg;
-    memset(&msg, 0, sizeof(msg));
-    msg.type = type;
-    if (text != NULL) {
-        strncpy(msg.text, text, sizeof(msg.text) - 1);
-    }
-    if (filename != NULL) {
-        strncpy(msg.filename, filename, sizeof(msg.filename) - 1);
-    }
-
+    const char *payload = NULL;
     if (type == IPC_CMD_PLAY_TEXT) {
-        LOGD(TAG, "即将发送文本: [%s] (长度=%zu)", msg.text, strlen(msg.text));
+        payload = text;
+    } else if (type == IPC_CMD_PLAY_AUDIO_FILE) {
+        payload = filename;
     }
 
     int retry_count = 3;
     while (retry_count > 0) {
-        size_t total_written = 0;
-        const uint8_t *ptr = (const uint8_t *)&msg;
-        int success = 1;
-
-        while (total_written < sizeof(msg)) {
-            ssize_t ret = write(tts_fd, ptr + total_written, sizeof(msg) - total_written);
-            if (ret < 0) {
-                if (errno == EINTR) {
-                    continue;
-                }
-                LOGE(TAG, "发送TTS命令失败: %s (errno=%d)", strerror(errno), errno);
-                if (errno == EPIPE) {
-                    LOGW(TAG, "管道破裂，尝试重新打开");
-                    close(tts_fd);
-                    tts_fd = -1;
-                    open_pipes();
-                }
-                success = 0;
-                break;
-            }
-            total_written += ret;
-        }
-
-        if (success && total_written == sizeof(msg)) {
+        uint32_t body_len = payload ? (uint32_t)(strlen(payload) + 1) : 0;
+        if (ipc_send_message(tts_fd, (uint16_t)type, payload, body_len, &g_tts_seq) == 0) {
             LOGD(TAG, "发送TTS命令成功: type=%d", type);
             return 0;
         }
+        LOGE(TAG, "发送TTS命令失败: %s (errno=%d)", strerror(errno), errno);
+        if (errno == EPIPE || errno == ENXIO) {
+            LOGW(TAG, "管道破裂，尝试重新打开");
+            close(tts_fd);
+            tts_fd = -1;
+            asr_kws_pipe_open(&asr_fd, &kws_fd, &tts_fd, &asr_ctrl_fd);
+        }
         retry_count--;
-        usleep(50000);
+        struct pollfd pfd = { .fd = 0, .events = 0 };
+        poll(&pfd, 1, 50);
     }
     LOGE(TAG, "发送TTS命令失败，重试次数耗尽");
     return -1;
@@ -185,18 +89,16 @@ void check_asr_timeout(void) {
 
     if (elapsed > ASR_TIMEOUT_SECONDS * 1000) {
         LOGI(TAG, "ASR超时(%d秒)，返回关键词监听模式", ASR_TIMEOUT_SECONDS);
-        
+
         if (strlen(g_last_asr_text) > 0) {
             LOGI(TAG, "最终识别结果: %s", g_last_asr_text);
-            usleep(300000);
-            
-            char llm_response[MAX_TEXT_LEN] = {0};
-            if (query_llm(g_last_asr_text, llm_response, sizeof(llm_response)) == 0) {
-                LOGI(TAG, "LLM响应: %s", llm_response);
-                if (strlen(llm_response) > 0) {
-                    LOGI(TAG, "发送播放文本命令");
-                    send_tts_command(IPC_CMD_PLAY_TEXT, llm_response, NULL);
-                }
+            send_tts_command(IPC_CMD_STOP_PLAYING, NULL, NULL);
+            asr_kws_pipe_write_text(&asr_fd, ASR_FIFO_PATH, g_last_asr_text);
+        } else {
+            char line[64];
+            snprintf(line, sizeof(line), "%s\n", ASR_TIMEOUT_SENTINEL);
+            if (asr_fd >= 0) {
+                write(asr_fd, line, strlen(line));
             }
         }
 
@@ -205,6 +107,34 @@ void check_asr_timeout(void) {
         current_state = STATE_KWS;
         LOGI(TAG, "=========关键词识别模式=========");
     }
+}
+
+void sigint_handler(int sig) {
+    LOGI(TAG, "收到退出信号，正在清理资源...");
+    if (alsa_buf != NULL) {
+        free(alsa_buf);
+    }
+    if (asr_fd != -1) close(asr_fd);
+    if (kws_fd != -1) close(kws_fd);
+    if (tts_fd != -1) close(tts_fd);
+    if (asr_ctrl_fd != -1) close(asr_ctrl_fd);
+    cleanup_sherpa_asr();
+    cleanup_resampler();
+    cleanup_alsa();
+    cleanup_sherpa_kws();
+    LOGI(TAG, "ASR+KWS进程退出");
+    running = 0;
+    exit(0);
+}
+
+static void offline_handler(int s) {
+    LOGI(TAG, "收到SIGUSR1信号，切换到离线模式");
+    g_current_online_mode = ONLINE_MODE_NO;
+}
+
+static void online_handler(int s) {
+    LOGI(TAG, "收到SIGUSR2信号，切换到在线模式");
+    g_current_online_mode = ONLINE_MODE_YES;
 }
 
 int main(int argc, char const *argv[]) {
@@ -262,10 +192,11 @@ int main(int argc, char const *argv[]) {
     }
     LOGI(TAG, "关键词识别模型加载完成");
 
-    open_pipes();
+    asr_kws_pipe_open(&asr_fd, &kws_fd, &tts_fd, &asr_ctrl_fd);
     LOGI(TAG, "=========关键词识别模式=========");
 
     while (running) {
+        asr_kws_pipe_process_ctrl(&asr_ctrl_fd, (int *)&g_current_online_mode);
         snd_pcm_sframes_t read_frames = snd_pcm_readi(g_pcm_handle, alsa_buf, PERIOD_SIZE);
         if (read_frames < 0) {
             LOGW(TAG, "ALSA读取失败: %s", snd_strerror(read_frames));
@@ -292,20 +223,10 @@ int main(int argc, char const *argv[]) {
         if (current_state == STATE_ASR && g_current_online_mode == ONLINE_MODE_YES) {
             if (process_asr_result(model_audio, model_frames) == 0) {
                 LOGI(TAG, "识别完成，结果: %s", g_last_asr_text);
-                
+
                 if (strlen(g_last_asr_text) > 0) {
-                    LOGI(TAG, "发送停止播放命令");
                     send_tts_command(IPC_CMD_STOP_PLAYING, NULL, NULL);
-                    usleep(300000);
-                    
-                    char llm_response[MAX_TEXT_LEN] = {0};
-                    if (query_llm(g_last_asr_text, llm_response, sizeof(llm_response)) == 0) {
-                        LOGI(TAG, "LLM响应: %s", llm_response);
-                        if (strlen(llm_response) > 0) {
-                            LOGI(TAG, "发送播放文本命令");
-                            send_tts_command(IPC_CMD_PLAY_TEXT, llm_response, NULL);
-                        }
-                    }
+                    asr_kws_pipe_write_text(&asr_fd, ASR_FIFO_PATH, g_last_asr_text);
                 }
 
                 memset(g_last_asr_text, 0, sizeof(g_last_asr_text));
@@ -318,30 +239,24 @@ int main(int argc, char const *argv[]) {
         } else if (current_state == STATE_KWS) {
             char keyword[256] = {0};
             if (process_kws_result(model_audio, model_frames, keyword, sizeof(keyword))) {
-                LOGI(TAG, "检测到关键词: %s", keyword);
-
-                if (kws_fd != -1) {
-                    char buf[260] = {0};
-                    snprintf(buf, sizeof(buf), "%s\n", keyword);
-                    write(kws_fd, buf, strlen(buf));
+                int is_wake = (!strcmp(keyword, "小米小米") || !strcmp(keyword, "小刘同学"));
+                if (!is_wake)
+                    continue;
+                LOGI(TAG, "检测到唤醒词: %s", keyword);
+                asr_kws_pipe_write_text(&kws_fd, KWS_FIFO_PATH, keyword);
+                send_tts_command(IPC_CMD_STOP_PLAYING, NULL, NULL);
+                send_tts_command(IPC_CMD_PLAY_WAKE_RESPONSE, NULL, NULL);
+                int rfd = open(TTS_WAKE_DONE_FIFO_PATH, O_RDONLY);
+                if (rfd >= 0) {
+                    char b;
+                    read(rfd, &b, 1);
+                    close(rfd);
                 }
-
-                if (g_current_online_mode == ONLINE_MODE_YES) {
-                    if (!strcmp(keyword, "小米小米") || !strcmp(keyword, "小刘同学") || !strcmp(keyword, "小爱同学")) {
-                        LOGI(TAG, "发送停止播放命令");
-                        send_tts_command(IPC_CMD_STOP_PLAYING, NULL, NULL);
-                        usleep(300000);
-                        LOGI(TAG, "发送唤醒响应命令");
-                        send_tts_command(IPC_CMD_PLAY_WAKE_RESPONSE, NULL, NULL);
-                        
-                        clock_gettime(CLOCK_MONOTONIC, &g_last_asr_update_time);
-                        memset(g_last_asr_text, 0, sizeof(g_last_asr_text));
-                        g_asr_result_updated = 0;
-                        
-                        current_state = STATE_ASR;
-                        LOGI(TAG, "=========语音识别模式=========");
-                    }
-                }
+                clock_gettime(CLOCK_MONOTONIC, &g_last_asr_update_time);
+                memset(g_last_asr_text, 0, sizeof(g_last_asr_text));
+                g_asr_result_updated = 0;
+                current_state = STATE_ASR;
+                LOGI(TAG, "=========语音识别模式=========");
                 snd_pcm_drop(g_pcm_handle);
                 snd_pcm_prepare(g_pcm_handle);
             }
