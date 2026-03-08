@@ -4,4 +4,7 @@ build/
 asr_kws_process
 tts_process
 
+# cursor
+.cursor
+
 
