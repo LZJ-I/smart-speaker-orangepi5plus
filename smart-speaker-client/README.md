@@ -6,12 +6,28 @@
 
 ## 目录
 
+### 仓库结构
+
 - `player/`：播放控制、规则匹配、音乐源后端
 - `player/music_source/`：本地曲库后端、server 曲库后端、统一路由
 - `voice-assistant/`：ASR/KWS/TTS/LLM
 - `supervisor/`：拉起与守护子进程
 - `ipc/`：二进制 IPC
 - `tools/`：调试工具
+- `assets/`：静态资源（如 TTS 等）
+- `docs/`：技术说明与索引
+
+### 本文档章节索引
+
+1. 生产环境依赖（请先安装）
+2. 本地最小可运行
+3. 完整构建
+4. 运行
+5. 环境变量（player）
+6. 音乐源
+7. Server 联调
+8. 模型下载
+9. 文档
 
 ## 生产环境依赖（请先安装）
 
@@ -92,14 +108,16 @@ make
 
 ## 环境变量（player）
 
-宏名定义见 `player/player_constants.h`。下列为 `player` 进程会读取的变量；未设置时行为见「默认值」列。
+宏名与字符串默认值集中在 `player/player_constants.h`（如 `SERVER_IP`、`SERVER_PORT`、`SERVER_MUSIC_BASE_URL`）。下表为 `player` 进程会读取的**环境变量**：未设置或非空校验失败时，回退到表中「默认值」列（与头文件宏一致；改默认请改宏并重新编译）。
+
+**在线 server 地址**：仓库默认宏为生产/内网联调用 IP（当前 `SERVER_IP` 为 `10.102.178.47`、端口 `8888`）。**本机 loopback（如 `127.0.0.1`）仅在你显式 `export SMART_SPEAKER_SERVER_IP`（及按需 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL`）时生效**，与「Server 联调」小节示例一致。
 
 | 变量 | 作用 | 默认值 |
 |------|------|--------|
 | `SMART_SPEAKER_LOCAL_MUSIC_DIR` | 本地曲库根目录 | `/mnt/sdcard/` |
-| `SMART_SPEAKER_SERVER_IP` | server TCP / 曲库请求的 IP | `player_constants.h` 中 `SERVER_IP`（当前为 `127.0.0.1`） |
+| `SMART_SPEAKER_SERVER_IP` | server TCP / 曲库请求的 IP | `player_constants.h` 中 `SERVER_IP`（当前为 `10.102.178.47`） |
 | `SMART_SPEAKER_SERVER_PORT` | server TCP 端口 | `8888`；非法字符串则回退默认 |
-| `SMART_SPEAKER_SERVER_MUSIC_BASE_URL` | 在线歌曲 HTTP URL 前缀（`+ path`） | `http://<SMART_SPEAKER_SERVER_IP 或默认 IP>/music/` |
+| `SMART_SPEAKER_SERVER_MUSIC_BASE_URL` | 在线歌曲 HTTP URL 前缀（`+ path`） | 未设置时由实现按当前选用的 IP 拼为 `http://<该 IP>/music/`；头文件中另有 `SERVER_MUSIC_BASE_URL` 宏与之一致 |
 | `SMART_SPEAKER_PLAYER_MODE` | 设为 `offline`（大小写不敏感）时强制离线：不建 TCP 长连、并通知 ASR/KWS 离线；其它或未设视为在线 | 在线 |
 | `SMART_SPEAKER_GST_ALSA_DEVICE` | 传给 GStreamer `alsasink` 的 device 字符串 | `dmix:CARD=rockchipes8388,DEV=0` |
 
@@ -138,8 +156,8 @@ cd player && ./run
 
 在线搜歌依赖 `smart-speaker-server` 与 Apache 静态目录：
 
-- TCP：默认 `10.102.178.47:8888`，可用 `SMART_SPEAKER_SERVER_IP`、`SMART_SPEAKER_SERVER_PORT` 覆盖
-- HTTP：默认 `http://<SMART_SPEAKER_SERVER_IP>/music/`，也可直接设 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL`
+- TCP：与 `player_constants.h` 中宏一致时为 `10.102.178.47:8888`；可用 `SMART_SPEAKER_SERVER_IP`、`SMART_SPEAKER_SERVER_PORT` 覆盖（本机调试见下文示例中的 `127.0.0.1`）
+- HTTP：未单独设 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL` 时为 `http://<当前选用的 server IP>/music/`（与宏默认 IP 一致时为 `http://10.102.178.47/music/`）；也可直接设 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL`
 - 协议：`list_music`（在线列表）、`search_music`（关键词）
 
 **目录说明**：`make`、`make tests`、`./tests/test_client` 必须在 **`smart-speaker-server`** 目录执行，不是在 `smart-speaker-client` 下。与 client 同级时：
@@ -171,7 +189,7 @@ export SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://127.0.0.1/music/
 ### 完整 `run` 调试（长连 + 搜歌 + 播放）
 
 1. **三件套先起**：`mysqld`、`./server_smart_speaker`、`apache2`；曲库在 `/var/www/html/music/` 或设好 `SMART_SPEAKER_MUSIC_PATH`（服务端）。
-2. **环境变量**（与 `player_constants.h` 一致，按需改 IP）：
+2. **环境变量**（**覆盖**头文件默认宏；本机 server 在本机时使用 `127.0.0.1` 示例）：
    ```bash
    export SMART_SPEAKER_SERVER_IP=127.0.0.1
    export SMART_SPEAKER_SERVER_PORT=8888
