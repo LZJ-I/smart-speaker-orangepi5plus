@@ -1,32 +1,53 @@
-CC = g++
-CFLAGS = -Wall -std=c++11
+CXX = g++
+INCLUDES = -Iinclude
+CXXFLAGS = -Wall -std=c++11 $(INCLUDES)
+
+EVENT_CFLAGS := $(shell pkg-config --cflags libevent 2>/dev/null)
+EVENT_LIBS := $(shell pkg-config --libs libevent 2>/dev/null)
+JSON_CFLAGS := $(shell pkg-config --cflags jsoncpp 2>/dev/null)
+JSON_LIBS := $(shell pkg-config --libs jsoncpp 2>/dev/null)
+MYSQL_CFLAGS := $(shell mysql_config --cflags 2>/dev/null)
+MYSQL_LIBS := $(shell mysql_config --libs 2>/dev/null)
+
+ifeq ($(strip $(EVENT_LIBS)),)
+EVENT_LIBS = -levent
+endif
+ifeq ($(strip $(JSON_LIBS)),)
+JSON_LIBS = -ljsoncpp
+endif
+ifeq ($(strip $(MYSQL_LIBS)),)
+MYSQL_LIBS = -lmysqlclient
+endif
+
+CXXFLAGS += $(EVENT_CFLAGS) $(JSON_CFLAGS) $(MYSQL_CFLAGS)
+LIBS = $(EVENT_LIBS) $(JSON_LIBS) $(MYSQL_LIBS) -lcrypto
+
 TARGET = server_smart_speaker
-# 源文件
-SRCS = main.c server.cpp database.cpp player.cpp
-# 目标文件
-OBJS = $(patsubst %.c,%.o,$(filter %.c,$(SRCS))) \
-       $(patsubst %.cpp,%.o,$(filter %.cpp,$(SRCS)))
-# 链接
-LIB = -levent -lmysqlclient -ljsoncpp -lcrypto
+SRCS = src/main.cpp src/server.cpp src/database.cpp src/player.cpp
+OBJS = $(SRCS:.cpp=.o)
 
-# 最终目标
+.PHONY: all clean tests stop
+
+all: $(TARGET)
+
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LIB)
-# 链接后删除中间目标文件（可选，保留也可以）
-	rm -rf $(OBJS)  
-# 把测试客户端也编译
-#	$(CC) $(CFLAGS) -o test_client test_client.c
-# 把测试APP也编译
-#	$(CC) $(CFLAGS) -o test_app test_app.cpp -ljsoncpp -lpthread
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) $(LIBS)
 
-# .c 文件→.o 文件的编译规则
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+src/%.o: src/%.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# .cpp 文件→.o 文件的编译规则
-%.o: %.cpp
-	$(CC) $(CFLAGS) -c $< -o $@
+tests: tests/test_client tests/test_app
 
-# 清理规则
+tests/test_client: tests/test_client.c
+	$(CC) -Wall -std=c11 -o $@ $<
+
+tests/test_app: tests/test_app.cpp
+	$(CXX) -Wall -std=c++11 $(INCLUDES) $(JSON_CFLAGS) -o $@ $< $(JSON_LIBS) -lpthread
+
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(TARGET) tests/test_client tests/test_app
+
+stop:
+	@port=$${SMART_SPEAKER_SERVER_PORT:-8888}; \
+	fuser -k $$port/tcp 2>/dev/null || true; \
+	pkill -x server_smart_speaker 2>/dev/null || true
