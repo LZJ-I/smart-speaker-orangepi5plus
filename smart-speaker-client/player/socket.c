@@ -88,6 +88,20 @@ static int socket_server_port(void)
     return (int)port;
 }
 
+static void socket_handle_disconnect(void)
+{
+    if (g_socket_fd < 0) {
+        return;
+    }
+    FD_CLR(g_socket_fd, &READSET);
+    close(g_socket_fd);
+    g_socket_fd = -1;
+    pthread_cancel(g_report_tid);
+    update_max_fd();
+    LOGW(TAG, "服务器断开，进入离线模式");
+    player_offline_init_storage_and_library(1);
+}
+
 // 初始化socket连接
 int socket_init()
 {
@@ -147,43 +161,47 @@ int socket_init()
 
 int socket_recv_data(char *buf)
 {
-    if(buf == NULL)  return -1;
+    int len;
+    size_t recv_len;
+    ssize_t rcv;
 
-    int len = -1;           // 接收数据长度
-    size_t recv_len = 0;    // 已接收数据长度
+    if (buf == NULL || g_socket_fd < 0) {
+        return -1;
+    }
 
-     // 接收长度
-    while (recv_len < sizeof(int))
-    {
-        int rcv = recv(g_socket_fd, buf + recv_len, sizeof(int) - recv_len, 0);
-        recv_len += rcv;
-        if(rcv == 0)
-        {
-            FD_CLR(g_socket_fd, &READSET);  // 删除服务器socket
-            close(g_socket_fd);             // 关闭服务器socket
-            pthread_cancel(g_report_tid);   // 关闭数据上报线程
-            update_max_fd();                // 重新计算最大fd
-            LOGW(TAG, "服务器断开，进入离线模式");
+    recv_len = 0;
+    while (recv_len < sizeof(int)) {
+        rcv = recv(g_socket_fd, buf + recv_len, sizeof(int) - recv_len, 0);
+        if (rcv > 0) {
+            recv_len += (size_t)rcv;
+            continue;
+        }
+        if (rcv == 0 || (rcv < 0 && errno != EINTR)) {
+            socket_handle_disconnect();
+            return -1;
         }
     }
     len = *(int *)buf;
+    if (len < 0 || len > 1023) {
+        LOGE(TAG, "非法报文长度: %d", len);
+        socket_handle_disconnect();
+        return -1;
+    }
 
-    // 接收数据
     memset(buf, 0, sizeof(int));
     recv_len = 0;
-    // 接收服务器发送的数据
-    while(recv_len < len) {
-        int rcv = recv(g_socket_fd, buf + recv_len, len - recv_len, 0);
-        recv_len += rcv;
-        if(rcv == 0)
-        {
-            FD_CLR(g_socket_fd, &READSET);  // 删除服务器socket
-            close(g_socket_fd);             // 关闭服务器socket
-            pthread_cancel(g_report_tid);   // 关闭数据上报线程
-            update_max_fd();                // 重新计算最大fd
-            LOGW(TAG, "服务器断开，进入离线模式");
+    while (recv_len < (size_t)len) {
+        rcv = recv(g_socket_fd, buf + recv_len, (size_t)len - recv_len, 0);
+        if (rcv > 0) {
+            recv_len += (size_t)rcv;
+            continue;
+        }
+        if (rcv == 0 || (rcv < 0 && errno != EINTR)) {
+            socket_handle_disconnect();
+            return -1;
         }
     }
+    buf[len] = '\0';
     return 0;
 }
 

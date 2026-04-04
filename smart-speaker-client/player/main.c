@@ -13,8 +13,6 @@
 #include "socket.h"
 #include "device.h"
 #include "player.h"
-#include "music_lib_bridge.h"
-
 #define TAG "PLAYER-MAIN"
 
 static void handle_exit_signal(int sig)
@@ -166,8 +164,8 @@ int main(int argc, char const *argv[])
 
     player_apply_env_mode();
     if (player_env_forces_offline()) {
-        if (music_lib_load_all_local_to_link() != 0) {
-            LOGE(TAG, "离线模式载入本地曲库到链表失败");
+        if (player_offline_init_storage_and_library(0) != 0) {
+            LOGE(TAG, "离线模式初始化失败");
             return -1;
         }
     }
@@ -177,7 +175,10 @@ int main(int argc, char const *argv[])
     if (player_env_forces_offline()) {
         LOGI(TAG, "离线模式（环境变量），跳过 TCP 长连");
     } else if (socket_init() != 0) {
-        LOGW(TAG, "TCP 长连失败（无 device_report/APP 信令）。搜歌仍走短时连接+本地回退；勿调用 player_switch_offline_mode 以免强依赖 U 盘");
+        LOGW(TAG, "TCP 长连失败，进入离线模式（挂载 SD 并载入本地曲库）");
+        if (player_offline_init_storage_and_library(0) != 0) {
+            LOGW(TAG, "离线模式初始化失败，本地曲库可能不可用");
+        }
     } else {
         LOGI(TAG, "TCP 长连成功，已注册 select 与定时上报");
     }

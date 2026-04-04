@@ -6,6 +6,7 @@
 #include "link.h"
 #include "player.h"
 #include "music_source/music_source.h"
+#include "music_source/music_source_manager.h"
 
 #define TAG "MUSIC-LIB"
 
@@ -66,7 +67,7 @@ int music_lib_load_all_local_to_link(void)
     link_clear_list();
     for (;;) {
         memset(&result, 0, sizeof(result));
-        if (music_source_search("", page, OFFLINE_LOAD_PAGE, &result) != 0) {
+        if (music_source_local_backend()->search("", page, OFFLINE_LOAD_PAGE, &result) != 0) {
             music_source_free_result(&result);
             return -1;
         }

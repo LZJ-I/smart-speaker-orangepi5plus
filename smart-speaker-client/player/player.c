@@ -12,6 +12,7 @@
 #include <sys/select.h>
 #include <sys/mount.h>
 #include <glob.h>
+#include <limits.h>
 
 #include "shm.h"
 #include "player.h"
@@ -843,6 +844,109 @@ static int unmount_storage_path(const char *mount_path)
     return -1;
 }
 
+static int path_is_mounted_at(const char *path)
+{
+    FILE *f;
+    char line[1024];
+    char norm[PATH_MAX];
+    char mntpt[PATH_MAX];
+    const char *cmp = path;
+    size_t n;
+    size_t ml;
+
+    if (path == NULL || path[0] == '\0') {
+        return 0;
+    }
+    if (realpath(path, norm) != NULL) {
+        cmp = norm;
+    }
+    n = strlen(cmp);
+    while (n > 1 && cmp[n - 1] == '/') {
+        n--;
+    }
+    f = fopen("/proc/mounts", "r");
+    if (f == NULL) {
+        return 0;
+    }
+    while (fgets(line, sizeof(line), f)) {
+        if (sscanf(line, "%*s %1023s", mntpt) != 1) {
+            continue;
+        }
+        ml = strlen(mntpt);
+        while (ml > 1 && mntpt[ml - 1] == '/') {
+            ml--;
+        }
+        if (ml == n && strncmp(mntpt, cmp, n) == 0) {
+            fclose(f);
+            return 1;
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
+static int player_ensure_sdcard_mounted(void)
+{
+    char udisk_name[128] = {0};
+    if (path_is_mounted_at(SDCARD_MOUNT_PATH)) {
+        return 0;
+    }
+    if (detect_storage_device(udisk_name, sizeof(udisk_name)) != 0) {
+        return -1;
+    }
+    if (access(SDCARD_MOUNT_PATH, F_OK) != 0 && mkdir(SDCARD_MOUNT_PATH, 0777) != 0) {
+        return -1;
+    }
+    if (mount(udisk_name, SDCARD_MOUNT_PATH, "exfat", 0, NULL) != 0 &&
+        mount(udisk_name, SDCARD_MOUNT_PATH, NULL, 0, NULL) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+int player_offline_init_storage_and_library(int reset_player)
+{
+    Music_Node first_song;
+    Shm_Data s;
+
+    if (reset_player) {
+        player_stop_play();
+        player_write_fifo("quit\n");
+        usleep(500000);
+    }
+    if (player_ensure_sdcard_mounted() != 0) {
+        LOGW(TAG, "离线初始化：未挂载存储或无可挂载设备");
+        link_clear_list();
+        asr_kws_switch_offline_mode();
+        g_current_online_mode = ONLINE_MODE_NO;
+        g_current_state = PLAY_STATE_STOP;
+        g_current_suspend = PLAY_SUSPEND_YES;
+        player_set_audio_focus(AUDIO_FOCUS_IDLE);
+        return -1;
+    }
+    if (music_lib_load_all_local_to_link() != 0) {
+        LOGW(TAG, "离线初始化：载入本地曲库失败");
+        asr_kws_switch_offline_mode();
+        g_current_online_mode = ONLINE_MODE_NO;
+        g_current_state = PLAY_STATE_STOP;
+        g_current_suspend = PLAY_SUSPEND_YES;
+        player_set_audio_focus(AUDIO_FOCUS_IDLE);
+        return -1;
+    }
+    if (link_get_first_music(&first_song) == 0) {
+        shm_get(&s);
+        update_shm_current_song(&s, &first_song);
+        shm_set(&s);
+    }
+    asr_kws_switch_offline_mode();
+    g_current_online_mode = ONLINE_MODE_NO;
+    g_current_state = PLAY_STATE_STOP;
+    g_current_suspend = PLAY_SUSPEND_YES;
+    player_set_audio_focus(AUDIO_FOCUS_IDLE);
+    LOGI(TAG, "离线模式初始化完成（存储与曲库）");
+    return 0;
+}
+
 void player_apply_env_mode(void)
 {
     const char *v = getenv(PLAYER_MODE_ENV);
@@ -888,7 +992,7 @@ int player_switch_offline_mode(void)
         tts_play_text("创建挂载存储设备失败");
         return -1;
     }
-    if (link_read_udisk_music() != 0) {
+    if (music_lib_load_all_local_to_link() != 0) {
         tts_play_text("切换离线模式失败，无法读取存储设备歌曲");
         return -1;
     }

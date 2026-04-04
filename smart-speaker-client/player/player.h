@@ -51,6 +51,7 @@ int init_player_ctrl_fifo();
 
 int player_switch_offline_mode(void);
 int player_switch_online_mode(void);
+int player_offline_init_storage_and_library(int reset_player);
 void player_apply_env_mode(void);
 int player_env_forces_offline(void);
 void player_cmd_fifo_close(void);
