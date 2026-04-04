@@ -26,11 +26,16 @@ sudo apt install -y \
   pkg-config \
   libjson-c-dev \
   libasound2-dev \
+  libasound2-plugins \
   libgstreamer1.0-dev \
-  libgstreamer-plugins-base1.0-dev
+  libgstreamer-plugins-base1.0-dev \
+  gstreamer1.0-tools \
+  gstreamer1.0-alsa \
+  gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good
 ```
 
-安装完成后若仍缺插件，可再装：`gstreamer1.0-plugins-base gstreamer1.0-plugins-good`（运行期）。
+MP3 等解码仍可能需要：`gstreamer1.0-plugins-ugly`。
 
 **GStreamer 运行期与 `playbin create fail`**：日志里 `(E) GST playbin create fail` 表示 `gst_element_factory_make("playbin")` 失败，**与歌曲 URL、在线/本地无关**，一般是系统里 **没有加载 `playbin` 插件**（`playbin` 在 **`gstreamer1.0-plugins-base`** 的 `libgstplayback.so` 中）。仅安装 `libgstreamer1.0-dev` 等开发包**不会**把插件装进运行环境，板子上需额外安装例如：
 
