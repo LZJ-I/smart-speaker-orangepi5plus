@@ -20,13 +20,15 @@ int socket_send_data(json_object *data)
     const char *json_str = json_object_to_json_string(data);
     if (NULL == json_str) {
         LOGE(TAG, "JSON转换失败");
+        json_object_put(data);
         return -1;
     }
     int len = strlen(json_str);
     memcpy(buf, &len, sizeof(len));
     memcpy(buf + sizeof(len), json_str, len);
-    if (-1 == send(g_socket_fd, buf, len + sizeof(len), 0)) {
+    if (-1 == send(g_socket_fd, buf, len + sizeof(len), MSG_NOSIGNAL)) {
         LOGE(TAG, "发送失败: %s", strerror(errno));
+        json_object_put(data);
         return -1;
     }
     json_object_put(data);
