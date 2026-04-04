@@ -742,6 +742,30 @@ void player_get_playlist_ctx(player_playlist_ctx_t *out_ctx)
     *out_ctx = g_playlist_ctx;
 }
 
+static void player_eof_wrap_or_restart(void)
+{
+    Shm_Data s;
+    Music_Node next_song;
+    int adv;
+    shm_get(&s);
+    if (s.current_mode == SINGLE_PLAY) {
+        player_start_play();
+        return;
+    }
+    memset(&next_song, 0, sizeof(next_song));
+    adv = link_get_next_music(s.current_source, s.current_song_id, s.current_mode, 1, &next_song);
+    if (adv == 1) {
+        if (link_get_first_music(&next_song) != 0) {
+            return;
+        }
+    } else if (adv != 0) {
+        return;
+    }
+    update_shm_current_song(&s, &next_song);
+    shm_set(&s);
+    player_start_play();
+}
+
 void player_handle_playlist_eof(int sig)
 {
     (void)sig;
@@ -765,28 +789,11 @@ void player_process_async_events(void)
             return;
         }
         if (g_current_online_mode == ONLINE_MODE_NO) {
-            Shm_Data s;
-            Music_Node next_song;
-            int adv;
-            shm_get(&s);
-            if (s.current_mode == SINGLE_PLAY) {
-                player_start_play();
-            } else {
-                memset(&next_song, 0, sizeof(next_song));
-                adv = link_get_next_music(s.current_source, s.current_song_id, s.current_mode, 1, &next_song);
-                if (adv == 1) {
-                    if (link_get_first_music(&next_song) != 0) {
-                        return;
-                    }
-                } else if (adv != 0) {
-                    return;
-                }
-                update_shm_current_song(&s, &next_song);
-                shm_set(&s);
-                player_start_play();
-            }
+            player_eof_wrap_or_restart();
         } else if (player_playlist_load_next_page() > 0) {
             player_start_play();
+        } else {
+            player_eof_wrap_or_restart();
         }
     }
 }

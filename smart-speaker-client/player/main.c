@@ -81,6 +81,16 @@ static void run_init_script(void)
     }
 }
 
+static void install_no_restart_handler(int signum, void (*handler)(int))
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(signum, &sa, NULL);
+}
+
 int main(int argc, char const *argv[])
 {
     (void)argc;
@@ -92,9 +102,9 @@ int main(int argc, char const *argv[])
         chdir("../..");
     }
 
-    // 注册 播放到列表末尾信号函数（孙进程发出）
-    signal(SIGUSR1, player_handle_playlist_eof);
-    signal(SIGCHLD, player_handle_sigchld);
+    /* SA_RESTART 默认会重启阻塞的 select，导致 EOF 后无法及时处理 g_playlist_eof_flag */
+    install_no_restart_handler(SIGUSR1, player_handle_playlist_eof);
+    install_no_restart_handler(SIGCHLD, player_handle_sigchld);
     signal(SIGINT, handle_exit_signal);
     signal(SIGTERM, handle_exit_signal);
     signal(SIGHUP, handle_exit_signal);
