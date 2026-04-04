@@ -621,6 +621,92 @@ int player_search_and_play_hot_random(void)
     return 0;
 }
 
+int player_simulate_song_finished(void)
+{
+    Shm_Data s;
+    Music_Node next_song;
+    int ret;
+    int was_stopped;
+    const char *keyword;
+
+    was_stopped = (g_current_state == PLAY_STATE_STOP);
+    shm_get(&s);
+    if (g_current_state != PLAY_STATE_PLAY || g_current_suspend == PLAY_SUSPEND_YES) {
+        return -1;
+    }
+    if (!pid_is_alive(s.child_pid)) {
+        return -1;
+    }
+
+    LOGI(TAG, "模拟当前歌曲播放完成");
+
+    memset(&next_song, 0, sizeof(next_song));
+    if (s.current_mode == SINGLE_PLAY) {
+        ret = link_get_music_by_source_id(s.current_source, s.current_song_id, &next_song);
+        if (ret != 0) {
+            ret = link_get_first_music(&next_song);
+        }
+    } else {
+        ret = link_get_next_music(s.current_source, s.current_song_id, s.current_mode, 1, &next_song);
+        if (ret == -1) {
+            if (g_current_online_mode == ONLINE_MODE_NO) {
+                ret = link_get_first_music(&next_song);
+            } else {
+                keyword = (g_playlist_ctx.keyword[0] != '\0') ? g_playlist_ctx.keyword : "热门";
+                if (player_prepare_keyword_playlist(keyword, 0) <= 0) {
+                    return -1;
+                }
+                if (s.current_source[0] == '\0' || s.current_song_id[0] == '\0') {
+                    ret = link_get_first_music(&next_song);
+                } else {
+                    ret = link_get_next_music(s.current_source, s.current_song_id, s.current_mode, 1, &next_song);
+                    if (ret == -1) {
+                        ret = link_get_first_music(&next_song);
+                    }
+                }
+            }
+        } else if (ret == 1) {
+            if (g_current_online_mode == ONLINE_MODE_NO) {
+                ret = link_get_first_music(&next_song);
+            } else {
+                if (player_playlist_load_next_page() <= 0) {
+                    if (player_prepare_keyword_playlist(keyword = (g_playlist_ctx.keyword[0] != '\0') ? g_playlist_ctx.keyword : "热门", 0) <= 0) {
+                        return 1;
+                    }
+                }
+                ret = link_get_first_music(&next_song);
+            }
+        }
+    }
+
+    if (ret != 0) {
+        return ret;
+    }
+
+    update_shm_current_song(&s, &next_song);
+    shm_set(&s);
+
+    if (was_stopped) {
+        s.child_pid = 0;
+        s.grand_pid = 0;
+        shm_set(&s);
+        player_start_play();
+        return 0;
+    }
+
+    shm_get(&s);
+    if (pid_is_alive(s.child_pid)) {
+        g_current_state = PLAY_STATE_PLAY;
+        g_current_suspend = PLAY_SUSPEND_NO;
+        player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
+        stop_active_grandchild(0);
+        return 0;
+    }
+
+    player_start_play();
+    return 0;
+}
+
 int player_next_song()
 {
     Shm_Data s;

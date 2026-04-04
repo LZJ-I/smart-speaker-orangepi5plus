@@ -30,6 +30,7 @@ void player_singer_play(const char *singer);
 int player_play_url(const char *url);
 int player_search_and_play_keyword(const char *keyword);
 int player_search_and_play_hot_random(void);
+int player_simulate_song_finished(void);
 int player_prepare_keyword_playlist(const char *keyword, int auto_start);
 int player_playlist_load_next_page(void);
 void player_get_playlist_ctx(player_playlist_ctx_t *out_ctx);

@@ -65,7 +65,7 @@ static void show_menu()
     printf("\t5. 上一首    \t\t6.  下一首  \n");
     printf("\t7. 减小音量  \t\t8.  增加音量\n");
     printf("\t9. 单曲循环  \t\ta.  顺序播放\n");
-    printf("\to.  在线/离线切换\n");
+    printf("\tk.  模拟播完  \t\to.  在线/离线切换\n");
     printf("=============================================\n");
 }
 
@@ -124,6 +124,9 @@ static void select_read_stdio(void)
         break;
     case 'a':
         player_set_mode(ORDER_PLAY);   //顺序播放
+        break;
+    case 'k':
+        player_simulate_song_finished();
         break;
     case 'o':
         if (g_current_online_mode == ONLINE_MODE_YES) {
