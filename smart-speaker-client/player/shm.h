@@ -22,7 +22,6 @@ union semun {
 typedef struct {
     char current_music[MUSIC_MAX_NAME];    // 当前播放的音乐名称
     char current_singer[SINGER_MAX_NAME];   // 当前播放的歌手名称
-    char current_source[MUSIC_SOURCE_MAX];  // 当前播放来源
     char current_song_id[MUSIC_ID_MAX];     // 当前播放歌曲ID
     int current_mode;           // 0-顺序播放 1-单曲循环
     pid_t parent_pid;           // 父进程的pid

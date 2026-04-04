@@ -81,12 +81,10 @@ int music_lib_load_all_local_to_link(void)
                 return -1;
             }
             total++;
-            LOGD(TAG, "offline[%d] source=%s singer=%s name=%s id=%s",
+            LOGD(TAG, "offline[%d] singer=%s song=%s",
                  total,
-                 result.items[i].source,
                  result.items[i].singer,
-                 result.items[i].song_name,
-                 result.items[i].song_id);
+                 result.items[i].song_name);
         }
         music_source_free_result(&result);
         if (total_pages <= 0 || page >= total_pages) {

@@ -28,6 +28,8 @@ void shm_detach(void)
 int shm_init()
 {
     Shm_Data shm_data = {0};
+    int created = 0;
+    void *addr;
 
     if (g_shm_base != NULL) {
         return 0;
@@ -35,20 +37,31 @@ int shm_init()
 
     g_shmid = shmget(SHMKEY, SHMSIZE, IPC_EXCL | IPC_CREAT | 0664);
     if (-1 == g_shmid) {
-        LOGE(TAG, "shmget failed: %s", strerror(errno));
-        return -1;
+        if (errno != EEXIST) {
+            LOGE(TAG, "shmget failed: %s", strerror(errno));
+            return -1;
+        }
+        g_shmid = shmget(SHMKEY, SHMSIZE, 0664);
+        if (-1 == g_shmid) {
+            LOGE(TAG, "attach existing shm failed: %s", strerror(errno));
+            return -1;
+        }
+    } else {
+        created = 1;
     }
 
-    void *addr = shmat(g_shmid, NULL, 0);
+    addr = shmat(g_shmid, NULL, 0);
     if ((void *)-1 == addr) {
         LOGE(TAG, "shmat failed (shm_init): %s", strerror(errno));
         return -1;
     }
 
-    memset(addr, 0, sizeof(Shm_Data));
-    shm_data.parent_pid = getpid();
-    shm_data.current_mode = ORDER_PLAY;
-    memcpy(addr, &shm_data, sizeof(Shm_Data));
+    if (created) {
+        memset(addr, 0, sizeof(Shm_Data));
+        shm_data.parent_pid = getpid();
+        shm_data.current_mode = ORDER_PLAY;
+        memcpy(addr, &shm_data, sizeof(Shm_Data));
+    }
 
     g_shm_base = addr;
     return 0;
@@ -61,8 +74,16 @@ int shm_sem_init(void)
     g_semid = semget(SEMKEY, 1, IPC_CREAT | IPC_EXCL | 0664);   // 创建信号量，所有用户可读
     if(-1 == g_semid)
     {
-        LOGE(TAG, "信号量初始化错误%s", strerror(errno));
-        return -1;
+        if (errno != EEXIST) {
+            LOGE(TAG, "信号量初始化错误%s", strerror(errno));
+            return -1;
+        }
+        g_semid = semget(SEMKEY, 1, 0664);
+        if (-1 == g_semid) {
+            LOGE(TAG, "获取已有信号量失败%s", strerror(errno));
+            return -1;
+        }
+        return 0;
     }
     // 初始化信号量
     union semun s;

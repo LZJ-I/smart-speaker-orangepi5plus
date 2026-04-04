@@ -61,11 +61,14 @@ static void format_display_name(const Music_Node *node, char *buf, size_t buf_si
 
 static Music_Node *find_by_identity(const char *source, const char *song_id)
 {
+    int need_source_match;
     Music_Node *node = (g_music_head != NULL) ? g_music_head->next : NULL;
+    if (song_id == NULL || song_id[0] == '\0') {
+        return NULL;
+    }
+    need_source_match = (source != NULL && source[0] != '\0');
     while (node != NULL) {
-        if (source != NULL && song_id != NULL &&
-            source[0] != '\0' && song_id[0] != '\0' &&
-            strcmp(node->source, source) == 0 &&
+        if ((!need_source_match || strcmp(node->source, source) == 0) &&
             strcmp(node->song_id, song_id) == 0) {
             return node;
         }
@@ -140,7 +143,7 @@ int link_get_source_id(const char *song_name, const char *singer, char *source_b
 int link_get_music_by_source_id(const char *source, const char *id, Music_Node *out_node)
 {
     Music_Node *node = NULL;
-    if (source == NULL || id == NULL || out_node == NULL || source[0] == '\0' || id[0] == '\0') {
+    if (id == NULL || out_node == NULL || id[0] == '\0') {
         return -1;
     }
     node = find_by_identity(source, id);
@@ -209,8 +212,8 @@ void link_traverse_list(char** music_list)
         char display[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
         format_display_name(current, display, sizeof(display));
         if (music_list == NULL) {
-            LOGI(TAG, "id=%s singer=%s song=%s source=%s",
-                 current->song_id, current->singer, current->song_name, current->source);
+            LOGI(TAG, "id=%s singer=%s song=%s",
+                 current->song_id, current->singer, current->song_name);
         } else {
             music_list[index++] = strdup(display);
         }

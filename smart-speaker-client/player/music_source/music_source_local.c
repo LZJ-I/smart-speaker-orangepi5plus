@@ -40,6 +40,65 @@ static void local_copy_text(char *dst, size_t dst_size, const char *src)
     dst[dst_size - 1] = '\0';
 }
 
+static void local_trim_spaces(char *text)
+{
+    char *start;
+    size_t len;
+
+    if (text == NULL || text[0] == '\0') return;
+    start = text;
+    while (*start == ' ' || *start == '\t') {
+        start++;
+    }
+    if (start != text) {
+        memmove(text, start, strlen(start) + 1);
+    }
+    len = strlen(text);
+    while (len > 0 && (text[len - 1] == ' ' || text[len - 1] == '\t')) {
+        text[--len] = '\0';
+    }
+}
+
+static void local_parse_song_meta(const char *filename, const char *fallback_singer,
+                                  char *song_name, size_t song_name_size,
+                                  char *singer, size_t singer_size)
+{
+    char base[MUSIC_MAX_NAME];
+    char parsed_singer[SINGER_MAX_NAME];
+    char *ext;
+    char *sep;
+
+    if (song_name == NULL || song_name_size == 0 || singer == NULL || singer_size == 0) return;
+    song_name[0] = '\0';
+    singer[0] = '\0';
+
+    local_copy_text(base, sizeof(base), filename);
+    ext = strrchr(base, '.');
+    if (ext != NULL) {
+        *ext = '\0';
+    }
+
+    sep = strstr(base, " - ");
+    if (sep != NULL && sep != base && sep[3] != '\0') {
+        *sep = '\0';
+        local_copy_text(song_name, song_name_size, base);
+        local_copy_text(parsed_singer, sizeof(parsed_singer), sep + 3);
+        local_trim_spaces(song_name);
+        local_trim_spaces(parsed_singer);
+        if (parsed_singer[0] != '\0') {
+            local_copy_text(singer, singer_size, parsed_singer);
+        }
+    } else {
+        local_copy_text(song_name, song_name_size, base);
+        local_trim_spaces(song_name);
+    }
+
+    if (singer[0] == '\0') {
+        local_copy_text(singer, singer_size, fallback_singer);
+        local_trim_spaces(singer);
+    }
+}
+
 static int local_has_audio_ext(const char *filename)
 {
     const char *ext;
@@ -135,8 +194,10 @@ static int local_scan_dir(const char *root_path, const char *relative_path, cons
         memset(&item, 0, sizeof(item));
         local_copy_text(item.source, sizeof(item.source), "local");
         local_copy_text(item.song_id, sizeof(item.song_id), child_rel);
-        local_copy_text(item.song_name, sizeof(item.song_name), entry->d_name);
         local_pick_singer(child_rel, item.singer, sizeof(item.singer));
+        local_parse_song_meta(entry->d_name, item.singer,
+                              item.song_name, sizeof(item.song_name),
+                              item.singer, sizeof(item.singer));
         if (!local_match_keyword(keyword, &item)) {
             continue;
         }

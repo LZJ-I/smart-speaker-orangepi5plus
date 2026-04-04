@@ -30,6 +30,73 @@ static void server_copy_text(char *dst, size_t dst_size, const char *src)
     dst[dst_size - 1] = '\0';
 }
 
+static void server_trim_spaces(char *text)
+{
+    char *start;
+    size_t len;
+
+    if (text == NULL || text[0] == '\0') return;
+    start = text;
+    while (*start == ' ' || *start == '\t') {
+        start++;
+    }
+    if (start != text) {
+        memmove(text, start, strlen(start) + 1);
+    }
+    len = strlen(text);
+    while (len > 0 && (text[len - 1] == ' ' || text[len - 1] == '\t')) {
+        text[--len] = '\0';
+    }
+}
+
+static void server_parse_song_meta(const char *raw_song, const char *song_id, const char *raw_singer,
+                                   char *song_name, size_t song_name_size,
+                                   char *singer, size_t singer_size)
+{
+    char base[MUSIC_MAX_NAME];
+    char parsed_singer[SINGER_MAX_NAME];
+    const char *name_src;
+    const char *slash;
+    char *ext;
+    char *sep;
+
+    if (song_name == NULL || song_name_size == 0 || singer == NULL || singer_size == 0) return;
+    song_name[0] = '\0';
+    singer[0] = '\0';
+    parsed_singer[0] = '\0';
+
+    name_src = (raw_song != NULL && raw_song[0] != '\0') ? raw_song : song_id;
+    if (name_src == NULL) {
+        return;
+    }
+    slash = strrchr(name_src, '/');
+    if (slash != NULL && slash[1] != '\0') {
+        name_src = slash + 1;
+    }
+    server_copy_text(base, sizeof(base), name_src);
+    ext = strrchr(base, '.');
+    if (ext != NULL) {
+        *ext = '\0';
+    }
+    sep = strstr(base, " - ");
+    if (sep != NULL && sep != base && sep[3] != '\0') {
+        *sep = '\0';
+        server_copy_text(song_name, song_name_size, base);
+        server_copy_text(parsed_singer, sizeof(parsed_singer), sep + 3);
+        server_trim_spaces(song_name);
+        server_trim_spaces(parsed_singer);
+    } else {
+        server_copy_text(song_name, song_name_size, base);
+        server_trim_spaces(song_name);
+    }
+
+    server_copy_text(singer, singer_size, raw_singer);
+    server_trim_spaces(singer);
+    if (singer[0] == '\0' && parsed_singer[0] != '\0') {
+        server_copy_text(singer, singer_size, parsed_singer);
+    }
+}
+
 static const char *music_server_ip(void)
 {
     const char *value = getenv(SERVER_IP_ENV);
@@ -224,6 +291,8 @@ static int server_recv_response(int fd, char **payload_out)
 static int server_parse_music_item(json_object *item_obj, MusicSourceItem *item)
 {
     json_object *value;
+    const char *raw_song = NULL;
+    const char *raw_singer = NULL;
     if (item_obj == NULL || item == NULL) return -1;
     memset(item, 0, sizeof(*item));
     server_copy_text(item->source, sizeof(item->source), "server");
@@ -234,12 +303,15 @@ static int server_parse_music_item(json_object *item_obj, MusicSourceItem *item)
     }
     value = NULL;
     if (json_object_object_get_ex(item_obj, "song", &value)) {
-        server_copy_text(item->song_name, sizeof(item->song_name), json_object_get_string(value));
+        raw_song = json_object_get_string(value);
     }
     value = NULL;
     if (json_object_object_get_ex(item_obj, "singer", &value)) {
-        server_copy_text(item->singer, sizeof(item->singer), json_object_get_string(value));
+        raw_singer = json_object_get_string(value);
     }
+    server_parse_song_meta(raw_song, item->song_id, raw_singer,
+                           item->song_name, sizeof(item->song_name),
+                           item->singer, sizeof(item->singer));
     if (item->song_id[0] == '\0' || item->song_name[0] == '\0') {
         return -1;
     }
