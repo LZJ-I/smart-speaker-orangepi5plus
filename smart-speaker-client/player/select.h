@@ -15,6 +15,8 @@ void update_max_fd();
 // 运行select循环监听
 void select_run();
 
+void select_on_player_stopped(void);
+
 
 // 语音合成：xxx
 void tts_play_text(char * text);
