@@ -1,7 +1,7 @@
 CC = gcc
 TARGET = ../../asr_kws_process
 CFLAGS = -Wall -g -DPROCESS_MODE -I../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -I../common -I../asr -I../kws -I../llm -I.. -I../../ipc
-LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/lib -lsamplerate -ljson-c
+LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib -lsamplerate -ljson-c
 
 all: $(TARGET)
 

@@ -1,7 +1,7 @@
 CC = gcc
 TARGET = ../../tts_process
 CFLAGS = -Wall -g -DPROCESS_MODE -I../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -I../tts -I../common -I.. -I../../ipc
-LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -lpthread -L../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/lib
+LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -lpthread -L../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib
 
 all: $(TARGET)
 
