@@ -20,6 +20,7 @@
 #include "select.h"
 #include "music_lib_bridge.h"
 #include "music_source/music_source.h"
+#include "socket.h"
 #include "../debug_log.h"
 
 #define TAG "PLAYER"
@@ -1023,6 +1024,10 @@ int player_switch_online_mode(void)
     if (g_current_online_mode == ONLINE_MODE_YES) {
         tts_play_text("当前为在线模式，无需切换");
         return 0;
+    }
+    if (socket_connect() != 0) {
+        player_offline_init_storage_and_library(0);
+        return -1;
     }
     player_stop_play();
     player_write_fifo("quit\n");

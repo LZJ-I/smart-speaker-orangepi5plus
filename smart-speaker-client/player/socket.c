@@ -143,7 +143,10 @@ int socket_init()
         // 每隔五秒上报一次次数据 （当前歌曲、模式、音量、状态'暂停播放停止'）
         // 创建一个线程用于上报
         if (socket_report_start_thread(&g_report_tid) != 0) {
+            FD_CLR(g_socket_fd, &READSET);
             close(g_socket_fd);
+            g_socket_fd = -1;
+            update_max_fd();
             return -1;
         }
         LOGI(TAG, "创建上报线程成功!");
@@ -156,6 +159,7 @@ int socket_init()
     }
     LOGE(TAG, "多次尝试后连接服务器失败");
     close(g_socket_fd);
+    g_socket_fd = -1;
     return -1;
 }
 
