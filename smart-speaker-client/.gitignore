@@ -6,7 +6,7 @@ voice_assistant
 asr_kws_process
 tts_process
 player/run
-player/example/bin/
+**/example/bin/
 
 # 3rdparty/sherpa-onnx 预编译 SDK（按 README 下载；勿提交）
 3rdparty/sherpa-onnx/*.tar.bz2
