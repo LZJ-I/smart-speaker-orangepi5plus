@@ -121,6 +121,13 @@ make
 | `SMART_SPEAKER_PLAYER_MODE` | 设为 `offline`（大小写不敏感）时强制离线：不建 TCP 长连、并通知 ASR/KWS 离线；其它或未设视为在线 | 在线 |
 | `SMART_SPEAKER_GST_ALSA_DEVICE` | 传给 GStreamer `alsasink` 的 device 字符串 | `dmix:CARD=rockchipes8388,DEV=0` |
 
+**Shell 里怎么用**
+
+- **当前终端里一直生效到关闭终端**：先 `export 变量名=值`，再启动进程；可用 `echo $变量名` 查看是否带上。
+- **只作用于这一次命令**（不写进环境、不改 `~/.bashrc`）：在命令前写 `变量=值`，多个用空格隔开，例如 `SMART_SPEAKER_SERVER_IP=127.0.0.1 ./run`（须在 `player` 目录下或写成可执行文件路径）。
+- **恢复为头文件宏默认**：`unset 变量名`（例如 `unset SMART_SPEAKER_SERVER_IP`），然后重新开 `./run`。
+- **长期默认**：把 `export ...` 写进 `~/.bashrc` 或 systemd service 的 `Environment=`，按你的部署方式选择。
+
 **GStreamer**：若存在仓库内 `3rdparty/gstreamer-alsa/.../gstreamer-1.0` 插件目录，启动时会把该目录**前置**写入 `GST_PLUGIN_PATH`（环境已有则用 `新路径:旧路径`）。也可自行预先 `export GST_PLUGIN_PATH=...`。
 
 **示例**
@@ -138,6 +145,22 @@ export SMART_SPEAKER_SERVER_IP=192.168.1.10
 export SMART_SPEAKER_SERVER_PORT=8888
 export SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://192.168.1.10/music/
 cd player && ./run
+```
+
+```bash
+# 本机起 server / Apache 时，覆盖默认宏（否则默认连 10.102.178.47）
+cd player
+export SMART_SPEAKER_SERVER_IP=127.0.0.1
+export SMART_SPEAKER_SERVER_PORT=8888
+export SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://127.0.0.1/music/
+./run
+```
+
+```bash
+# 同上，但只对这一次 ./run 生效（示例：在 player 目录）
+SMART_SPEAKER_SERVER_IP=127.0.0.1 \
+SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://127.0.0.1/music/ \
+./run
 ```
 
 ```bash
