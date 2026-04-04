@@ -162,6 +162,8 @@ int main(int argc, char const *argv[])
     }
     LOGI(TAG, "共享内存初始化成功！");
 
+    player_set_mode(ORDER_PLAY);
+
     player_apply_env_mode();
     if (player_env_forces_offline()) {
         if (player_offline_init_storage_and_library(0) != 0) {
