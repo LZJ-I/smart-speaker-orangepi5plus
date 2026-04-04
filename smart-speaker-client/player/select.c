@@ -24,12 +24,15 @@
 fd_set READSET;         // 读事件集合
 int g_max_fd;           // 最大文件描述符
 
-int g_need_continue = 0;  // 记录上一次的播放情况， 上一次处于播放，则现在为播放。
 static uint32_t g_tts_seq = 0;
 static const char *FALLBACK_WAV_PATH = "./assets/tts/fallback_unmatched.wav";
 static const char *MODE_ORDER_WAV_PATH = "./assets/tts/mode_order.wav";
 static const char *MODE_SINGLE_WAV_PATH = "./assets/tts/mode_single.wav";
-static int g_resume_after_tts = 0;
+
+void select_on_player_stopped(void)
+{
+    player_set_audio_focus(AUDIO_FOCUS_IDLE);
+}
 
 static int ensure_tts_fifo_ready(void)
 {
@@ -95,7 +98,7 @@ static void select_read_stdio(void)
         player_start_play();    // 开始播放
         break;
     case '2':
-        player_stop_play();     // 停止播放
+        player_stop_play();
         break;
     case '3':
         player_suspend_play();  // 暂停播放
@@ -187,6 +190,9 @@ static void select_read_asr(void)
     {
         LOGE(TAG, "asr管道对端关闭");
         FD_CLR(g_asr_fd, &READSET); // 从监听集合中移除
+        close(g_asr_fd);
+        g_asr_fd = -1;
+        init_asr_fifo();
         update_max_fd();    // 更新最大fd
         return;
     }
@@ -194,15 +200,16 @@ static void select_read_asr(void)
     if (buf[ret - 1] == '\n') buf[ret - 1] = '\0';
     LOGI(TAG, "读取asr管道数据[%s]", buf);
     if (strcmp(buf, ASR_TIMEOUT_SENTINEL) == 0) {
-        if (g_resume_after_tts) player_continue_play();
-        g_resume_after_tts = 0;
+        if (player_audio_focus_should_resume()) {
+            player_audio_focus_prepare_resume();
+            player_continue_play();
+        }
         return;
     }
-    g_resume_after_tts = 0;
 
     rule_match_result_t match_result;
     int resume_after_handle = 0;
-    int had_music_before_wakeup = g_need_continue;
+    int had_music_before_wakeup = player_audio_focus_should_resume();
     int match_ret = rule_match_text(buf, &match_result);
     if (match_ret != 0) {
         LOGE(TAG, "规则匹配失败");
@@ -215,28 +222,20 @@ static void select_read_asr(void)
 
     switch (match_result.cmd) {
     case RULE_CMD_STOP:
-        g_need_continue = 0;
-        g_resume_after_tts = 0;
         player_stop_play();
         break;
     case RULE_CMD_PAUSE:
-        g_need_continue = 0;
-        g_resume_after_tts = 0;
+        player_audio_focus_cancel_resume();
         player_suspend_play();
         break;
     case RULE_CMD_RESUME:
-        g_need_continue = 0;
-        g_resume_after_tts = 0;
+        player_audio_focus_cancel_resume();
         player_continue_play();
         break;
     case RULE_CMD_NEXT:
-        g_need_continue = 0;
-        g_resume_after_tts = 0;
         player_next_song();
         break;
     case RULE_CMD_PREV:
-        g_need_continue = 0;
-        g_resume_after_tts = 0;
         player_prev_song();
         break;
     case RULE_CMD_VOL_DOWN:
@@ -258,46 +257,66 @@ static void select_read_asr(void)
         resume_after_handle = had_music_before_wakeup;
         break;
     case RULE_CMD_PLAY_START:
-        g_need_continue = 0;
-        g_resume_after_tts = 0;
         player_start_play();
         break;
     case RULE_CMD_PLAY_QUERY:
         if (try_music_lib_play(buf)) {
-            g_need_continue = 0;
-            g_resume_after_tts = 0;
         } else {
+            player_audio_focus_cancel_resume();
             tts_play_audio_file(FALLBACK_WAV_PATH);
-            g_need_continue = 0;
-            g_resume_after_tts = 0;
         }
         break;
     case RULE_CMD_SWITCH_OFFLINE:
-        g_need_continue = 0;
-        g_resume_after_tts = 0;
         player_switch_offline_mode();
         break;
     case RULE_CMD_SWITCH_ONLINE:
-        g_need_continue = 0;
-        g_resume_after_tts = 0;
         player_switch_online_mode();
         break;
     case RULE_CMD_NONE:
     default:
         if (g_current_online_mode == ONLINE_MODE_NO) {
+            player_audio_focus_cancel_resume();
             tts_play_audio_file(FALLBACK_WAV_PATH);
         } else {
-            run_llm_and_tts(buf);
-            resume_after_handle = had_music_before_wakeup;
+            if (run_llm_and_tts(buf) == 0) {
+            } else {
+                player_audio_focus_cancel_resume();
+                tts_play_audio_file(FALLBACK_WAV_PATH);
+            }
         }
-        g_need_continue = 0;
         break;
     }
 
     if (resume_after_handle)
     {
+        player_audio_focus_prepare_resume();
         player_continue_play();
     }
+}
+
+static void select_read_kws(void)
+{
+    char buf[256] = {0};
+    ssize_t ret = read(g_kws_fd, buf, sizeof(buf) - 1);
+    if (ret < 0)
+    {
+        LOGE(TAG, "读取kws管道失败: %s", strerror(errno));
+        return;
+    }
+    if (ret == 0)
+    {
+        LOGW(TAG, "kws管道对端关闭");
+        FD_CLR(g_kws_fd, &READSET);
+        close(g_kws_fd);
+        g_kws_fd = -1;
+        init_kws_fifo();
+        update_max_fd();
+        return;
+    }
+
+    buf[ret] = '\0';
+    if (buf[ret - 1] == '\n') buf[ret - 1] = '\0';
+    LOGI(TAG, "读取kws管道数据[%s]", buf);
 }
 
 
@@ -322,24 +341,26 @@ static void select_read_player_ctrl(void)
     if (strstr(buf, "tts:start") != NULL)
     {
         LOGI(TAG, "收到TTS开始事件");
-        if (g_current_state == PLAY_STATE_PLAY && g_current_suspend == PLAY_SUSPEND_NO)
+        if (player_get_audio_focus() == AUDIO_FOCUS_MUSIC_PLAYING)
         {
-            g_need_continue = 1;
-            player_suspend_play();
-            g_resume_after_tts = 1;
+            player_suspend_for_tts();
         }
-        else
+        else if (player_get_audio_focus() == AUDIO_FOCUS_IDLE)
         {
-            g_need_continue = 0;
+            player_audio_focus_mark_tts_standalone();
         }
     }
     else if (strstr(buf, "tts:done") != NULL)
     {
         LOGI(TAG, "收到TTS结束事件");
-        if (g_resume_after_tts)
+        if (player_audio_focus_should_resume() && g_current_state != PLAY_STATE_STOP)
         {
+            player_audio_focus_prepare_resume();
             player_continue_play();
-            g_resume_after_tts = 0;
+        }
+        else if (player_get_audio_focus() == AUDIO_FOCUS_TTS_PLAYING)
+        {
+            player_set_audio_focus(AUDIO_FOCUS_IDLE);
         }
     }
 }
@@ -353,18 +374,22 @@ void select_run(void)
     
     LOGI(TAG, "select 监听开始：g_max_fd=%d, g_asr_fd=%d", g_max_fd, g_asr_fd);
     
-    while (1)
+    while (!g_player_shutdown_requested)
     {
+        player_process_async_events();
         TMPSET = READSET;   // 将全局变量赋给临时变量， 防止因为被监听到导致的取消监听
         int ret = select(g_max_fd+1, &TMPSET, NULL, NULL, NULL);
         if(-1 == ret)
         {
             // 排除信号对select的干扰
-            if(EINTR == errno)
+            if(EINTR == errno) {
+                player_process_async_events();
                 continue;
+            }
             LOGE(TAG, "select错误: %s", strerror(errno));
             return;
         }
+        player_process_async_events();
 
         if(FD_ISSET(0, &TMPSET)){
             select_read_stdio();
@@ -377,6 +402,9 @@ void select_run(void)
         }
         if(g_asr_fd >= 0 && FD_ISSET(g_asr_fd, &TMPSET)){
             select_read_asr();
+        }
+        if(g_kws_fd >= 0 && FD_ISSET(g_kws_fd, &TMPSET)){
+            select_read_kws();
         }
         if(g_player_ctrl_fd >= 0 && FD_ISSET(g_player_ctrl_fd, &TMPSET)){
             select_read_player_ctrl();
