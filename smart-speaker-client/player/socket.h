@@ -2,9 +2,7 @@
 #define __SOCKET_H__ 
 #include <pthread.h>
 
-#define PORT 8888
-//#define IP "127.0.0.1"
-#define IP "10.102.178.47"
+#include "player_constants.h"
 
 extern int g_socket_fd; // 服务器socket 文件描述符
 extern pthread_t g_report_tid;        // 定时上报数据线程的线程id
