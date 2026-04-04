@@ -195,6 +195,7 @@ int run_gst_player(const char *initial_uri)
     GstElement *asink = gst_element_factory_make("alsasink", "asink");
     if (asink) {
         g_object_set(asink, "device", gst_alsa_device_string(), NULL);
+        LOGI(TAG, "使用 alsasink device=%s", gst_alsa_device_string());
     } else {
         LOGW(TAG, "alsasink 不可用，回退到 autoaudiosink");
         asink = gst_element_factory_make("autoaudiosink", "asink");
