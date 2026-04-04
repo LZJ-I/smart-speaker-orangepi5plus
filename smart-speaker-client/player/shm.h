@@ -37,6 +37,8 @@ typedef struct {
 int shm_init();
 // 初始化信号量
 int shm_sem_init(void);
+// 进程退出前断开映射（父进程调用）
+void shm_detach(void);
 
 // 获取共享内存数据
 void shm_get(Shm_Data* data);

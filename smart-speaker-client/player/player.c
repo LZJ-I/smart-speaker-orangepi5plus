@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -17,13 +18,17 @@
 #include "link.h"
 #include "select.h"
 #include "music_lib_bridge.h"
+#include "music_source/music_source.h"
 #include "../debug_log.h"
 
 #define TAG "PLAYER"
 
-int g_current_state = PLAY_STATE_STOP;
-int g_current_suspend = PLAY_SUSPEND_NO;
+volatile sig_atomic_t g_current_state = PLAY_STATE_STOP;
+volatile sig_atomic_t g_current_suspend = PLAY_SUSPEND_NO;
+volatile sig_atomic_t g_player_shutdown_requested = 0;
+volatile sig_atomic_t g_audio_focus_state = AUDIO_FOCUS_IDLE;
 int g_current_online_mode = ONLINE_MODE_YES;
+static int g_env_forces_offline = 0;
 
 int g_asr_fd = -1;
 int g_kws_fd = -1;
@@ -36,6 +41,95 @@ static player_playlist_ctx_t g_playlist_ctx = {
     .total_pages = 1,
     .page_size = 10
 };
+
+static volatile sig_atomic_t g_playlist_eof_flag = 0;
+static volatile sig_atomic_t g_child_exit_flag = 0;
+static volatile sig_atomic_t g_eof_autostart_suppressed = 0;
+static int g_gst_cmd_fifo_fd = -1;
+static int player_write_fifo(const char *cmd);
+static void asr_kws_switch_offline_mode(void);
+
+void player_set_audio_focus(int focus_state)
+{
+    g_audio_focus_state = focus_state;
+}
+
+int player_get_audio_focus(void)
+{
+    return (int)g_audio_focus_state;
+}
+
+int player_audio_focus_should_resume(void)
+{
+    return g_audio_focus_state == AUDIO_FOCUS_MUSIC_PAUSED_FOR_TTS ||
+           g_audio_focus_state == AUDIO_FOCUS_MUSIC_RESUMING;
+}
+
+void player_audio_focus_prepare_resume(void)
+{
+    if (player_audio_focus_should_resume()) {
+        g_audio_focus_state = AUDIO_FOCUS_MUSIC_RESUMING;
+    }
+}
+
+void player_audio_focus_cancel_resume(void)
+{
+    if (player_audio_focus_should_resume()) {
+        g_audio_focus_state = AUDIO_FOCUS_MUSIC_PAUSED_MANUAL;
+    } else if (g_audio_focus_state == AUDIO_FOCUS_TTS_PLAYING) {
+        g_audio_focus_state = AUDIO_FOCUS_IDLE;
+    }
+}
+
+void player_audio_focus_mark_tts_standalone(void)
+{
+    if (g_audio_focus_state == AUDIO_FOCUS_IDLE) {
+        g_audio_focus_state = AUDIO_FOCUS_TTS_PLAYING;
+    }
+}
+
+static int pid_is_alive(pid_t pid)
+{
+    return (pid > 0 && kill(pid, 0) == 0);
+}
+
+static int wait_pid_exit(pid_t pid, int timeout_ms, int *status)
+{
+    int elapsed = 0;
+    if (pid <= 0) return 0;
+    while (1) {
+        pid_t ret = waitpid(pid, status, WNOHANG);
+        if (ret == pid) return 1;
+        if (ret == 0) {
+            if (timeout_ms >= 0 && elapsed >= timeout_ms) return 0;
+            usleep(50 * 1000);
+            elapsed += 50;
+            continue;
+        }
+        if (ret < 0) {
+            if (errno == EINTR) {
+                if (g_current_state != PLAY_STATE_PLAY) return 0;
+                continue;
+            }
+            return 0;
+        }
+    }
+}
+
+static void stop_active_grandchild(int force_kill)
+{
+    Shm_Data s;
+    shm_get(&s);
+    (void)player_write_fifo("quit\n");
+    usleep(150 * 1000);
+    if (pid_is_alive(s.grand_pid)) {
+        kill(s.grand_pid, SIGTERM);
+        usleep(150 * 1000);
+    }
+    if (pid_is_alive(s.grand_pid) && force_kill) {
+        kill(s.grand_pid, SIGKILL);
+    }
+}
 
 static void copy_text(char *dst, size_t dst_size, const char *src)
 {
@@ -65,25 +159,22 @@ static int resolve_play_url(const Music_Node *song, char *url, size_t url_size)
 {
     if (song == NULL || url == NULL || url_size == 0) return -1;
     url[0] = '\0';
-    if (g_current_online_mode == ONLINE_MODE_YES) {
-        if (music_lib_get_url_by_source_id(song->source, song->song_id, url, url_size) == 0 && url[0] != '\0') {
+    if (music_lib_get_url_by_source_id(song->source, song->song_id, url, url_size) == 0 && url[0] != '\0') {
+        return 0;
+    }
+    if (song->singer[0] != '\0') {
+        char full_name[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
+        snprintf(full_name, sizeof(full_name), "%s/%s", song->singer, song->song_name);
+        if (music_lib_get_url_for_music(full_name, url, url_size) == 0 && url[0] != '\0') {
             return 0;
         }
-        if (song->singer[0] != '\0') {
-            char full_name[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
-            snprintf(full_name, sizeof(full_name), "%s/%s", song->singer, song->song_name);
-            if (music_lib_get_url_for_music(full_name, url, url_size) == 0 && url[0] != '\0') {
-                return 0;
-            }
-        }
-        if (music_lib_get_url_for_music(song->song_name, url, url_size) == 0 && url[0] != '\0') {
-            return 0;
-        }
-        return -1;
+    }
+    if (music_lib_get_url_for_music(song->song_name, url, url_size) == 0 && url[0] != '\0') {
+        return 0;
     }
     snprintf(url, url_size, "%s%s", MUSIC_PATH, song->song_name);
     url[url_size - 1] = '\0';
-    return 0;
+    return (url[0] != '\0') ? 0 : -1;
 }
 
 static int play_music_node(const Music_Node *song)
@@ -99,16 +190,64 @@ static int play_music_node(const Music_Node *song)
     return run_gst_player(music_path);
 }
 
+static void player_pause_current_output(void)
+{
+    Shm_Data s;
+    shm_get(&s);
+    if (pid_is_alive(s.grand_pid)) {
+        kill(s.grand_pid, SIGSTOP);
+    } else {
+        (void)player_write_fifo("cycle pause\n");
+    }
+    g_current_state = PLAY_STATE_PLAY;
+    g_current_suspend = PLAY_SUSPEND_YES;
+}
+
+static int player_ensure_gst_cmd_fifo_wr(void)
+{
+    if (g_gst_cmd_fifo_fd >= 0) {
+        return 0;
+    }
+    g_gst_cmd_fifo_fd = open(GST_CMD_FIFO, O_WRONLY | O_NONBLOCK);
+    return (g_gst_cmd_fifo_fd >= 0) ? 0 : -1;
+}
+
 static int player_write_fifo(const char *cmd)
 {
-    int fd = open(GST_CMD_FIFO, O_WRONLY | O_NONBLOCK);
-    if (fd == -1) {
+    size_t len;
+    ssize_t w;
+
+    if (cmd == NULL) {
         return -1;
     }
-    size_t len = strlen(cmd);
-    int ret = (write(fd, cmd, len) == (ssize_t)len) ? 0 : -1;
-    close(fd);
-    return ret;
+    if (player_ensure_gst_cmd_fifo_wr() != 0) {
+        return -1;
+    }
+    len = strlen(cmd);
+    w = write(g_gst_cmd_fifo_fd, cmd, len);
+    if (w == (ssize_t)len) {
+        return 0;
+    }
+    if (w < 0 && (errno == ENXIO || errno == EPIPE || errno == EBADF)) {
+        if (g_gst_cmd_fifo_fd >= 0) {
+            close(g_gst_cmd_fifo_fd);
+            g_gst_cmd_fifo_fd = -1;
+        }
+        if (player_ensure_gst_cmd_fifo_wr() != 0) {
+            return -1;
+        }
+        w = write(g_gst_cmd_fifo_fd, cmd, len);
+        return (w == (ssize_t)len) ? 0 : -1;
+    }
+    return -1;
+}
+
+void player_cmd_fifo_close(void)
+{
+    if (g_gst_cmd_fifo_fd >= 0) {
+        close(g_gst_cmd_fifo_fd);
+        g_gst_cmd_fifo_fd = -1;
+    }
 }
 
 static int select_song_from_shm(Music_Node *song)
@@ -127,6 +266,12 @@ void child_quit_process(int sig)
 {
     (void)sig;
     g_current_state = PLAY_STATE_STOP;
+}
+
+void player_handle_sigchld(int sig)
+{
+    (void)sig;
+    g_child_exit_flag = 1;
 }
 
 static void child_process(Music_Node *start_song)
@@ -165,9 +310,21 @@ static void child_process(Music_Node *start_song)
             Shm_Data s;
             Music_Node next_song;
             int force_advance = 0;
-            waitpid(pid, &status, 0);
+            while (!wait_pid_exit(pid, 100, &status)) {
+                if (g_current_state != PLAY_STATE_PLAY) {
+                    if (pid_is_alive(pid)) kill(pid, SIGTERM);
+                    wait_pid_exit(pid, 500, &status);
+                    break;
+                }
+            }
             if (g_current_state != PLAY_STATE_PLAY) {
                 break;
+            }
+            if (!WIFEXITED(status) && !WIFSIGNALED(status)) {
+                if (g_current_state != PLAY_STATE_PLAY) {
+                    break;
+                }
+                force_advance = 1;
             }
             if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
                 force_advance = 1;
@@ -207,6 +364,7 @@ static void child_process(Music_Node *start_song)
 static void player_play_music(const Music_Node *song)
 {
     pid_t pid;
+    Shm_Data s;
     if (song == NULL) return;
     pid = fork();
     if (pid < 0) {
@@ -218,27 +376,39 @@ static void player_play_music(const Music_Node *song)
         child_process(&local_song);
         exit(0);
     }
+    shm_get(&s);
+    s.child_pid = pid;
+    s.grand_pid = 0;
+    shm_set(&s);
 }
 
 void player_start_play()
 {
     Music_Node start_song;
     Shm_Data s;
+    const char *keyword;
+    g_eof_autostart_suppressed = 0;
     shm_get(&s);
-    if (g_current_state == PLAY_STATE_PLAY && g_current_suspend == PLAY_SUSPEND_NO) return;
+    if (g_current_state == PLAY_STATE_PLAY && g_current_suspend == PLAY_SUSPEND_NO && pid_is_alive(s.child_pid)) {
+        return;
+    }
     if (g_current_state == PLAY_STATE_PLAY && g_current_suspend == PLAY_SUSPEND_YES) {
         player_continue_play();
         return;
     }
     memset(&start_song, 0, sizeof(start_song));
     if (select_song_from_shm(&start_song) != 0) {
-        LOGW(TAG, "当前无可播放歌曲");
-        return;
+        keyword = (g_playlist_ctx.keyword[0] != '\0') ? g_playlist_ctx.keyword : "热门";
+        if (player_prepare_keyword_playlist(keyword, 0) <= 0 || select_song_from_shm(&start_song) != 0) {
+            LOGW(TAG, "当前无可播放歌曲");
+            return;
+        }
     }
     update_shm_current_song(&s, &start_song);
     shm_set(&s);
     g_current_state = PLAY_STATE_PLAY;
     g_current_suspend = PLAY_SUSPEND_NO;
+    player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
     LOGI(TAG, "开始播放 song_id=%s singer=%s song=%s source=%s",
          start_song.song_id, start_song.singer, start_song.song_name, start_song.source);
     player_play_music(&start_song);
@@ -247,15 +417,29 @@ void player_start_play()
 void player_stop_play(void)
 {
     Shm_Data s;
+    pid_t cpid;
     if (g_current_state == PLAY_STATE_STOP) return;
     LOGI(TAG, "结束播放");
+    select_on_player_stopped();
+    g_eof_autostart_suppressed = 1;
     shm_get(&s);
-    if (s.child_pid > 0) kill(s.child_pid, SIGUSR1);
-    if (s.grand_pid > 0) kill(s.grand_pid, SIGTERM);
-    player_write_fifo("quit\n");
-    if (s.child_pid > 0) waitpid(s.child_pid, NULL, 0);
+    cpid = s.child_pid;
+    if (pid_is_alive(cpid)) {
+        kill(cpid, SIGUSR1);
+    }
+    stop_active_grandchild(1);
+    if (pid_is_alive(cpid)) {
+        if (!wait_pid_exit(cpid, 500, NULL)) {
+            kill(cpid, SIGTERM);
+            if (!wait_pid_exit(cpid, 500, NULL)) {
+                kill(cpid, SIGKILL);
+                wait_pid_exit(cpid, 500, NULL);
+            }
+        }
+    }
     g_current_state = PLAY_STATE_STOP;
     g_current_suspend = PLAY_SUSPEND_YES;
+    player_set_audio_focus(AUDIO_FOCUS_IDLE);
     s.child_pid = 0;
     s.grand_pid = 0;
     shm_set(&s);
@@ -263,23 +447,46 @@ void player_stop_play(void)
 
 void player_continue_play()
 {
+    Shm_Data s;
     if (g_current_state == PLAY_STATE_STOP) {
         player_start_play();
         return;
     }
-    if (g_current_suspend == PLAY_SUSPEND_NO) return;
-    player_write_fifo("cycle pause\n");
-    g_current_state = PLAY_STATE_PLAY;
-    g_current_suspend = PLAY_SUSPEND_NO;
-    LOGI(TAG, "继续播放");
+    shm_get(&s);
+    if (g_current_suspend == PLAY_SUSPEND_YES) {
+        if (pid_is_alive(s.grand_pid)) {
+            kill(s.grand_pid, SIGCONT);
+        } else {
+            (void)player_write_fifo("cycle pause\n");
+        }
+        g_current_state = PLAY_STATE_PLAY;
+        g_current_suspend = PLAY_SUSPEND_NO;
+        player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
+        if (!pid_is_alive(s.grand_pid) && !pid_is_alive(s.child_pid)) {
+            player_start_play();
+            return;
+        }
+        LOGI(TAG, "继续播放");
+        return;
+    }
+    if (!pid_is_alive(s.child_pid)) {
+        player_start_play();
+    }
 }
 
 void player_suspend_play()
 {
     if (g_current_state == PLAY_STATE_STOP || g_current_suspend == PLAY_SUSPEND_YES) return;
-    player_write_fifo("cycle pause\n");
-    g_current_state = PLAY_STATE_PLAY;
-    g_current_suspend = PLAY_SUSPEND_YES;
+    player_pause_current_output();
+    player_set_audio_focus(AUDIO_FOCUS_MUSIC_PAUSED_MANUAL);
+    LOGI(TAG, "暂停播放");
+}
+
+void player_suspend_for_tts(void)
+{
+    if (g_current_state == PLAY_STATE_STOP || g_current_suspend == PLAY_SUSPEND_YES) return;
+    player_pause_current_output();
+    player_set_audio_focus(AUDIO_FOCUS_MUSIC_PAUSED_FOR_TTS);
     LOGI(TAG, "暂停播放");
 }
 
@@ -412,12 +619,45 @@ int player_next_song()
     Music_Node next_song;
     int ret;
     int was_stopped;
+    const char *keyword;
     was_stopped = (g_current_state == PLAY_STATE_STOP);
     shm_get(&s);
     memset(&next_song, 0, sizeof(next_song));
     ret = link_get_next_music(s.current_source, s.current_song_id, s.current_mode, 1, &next_song);
+    if (ret == -1) {
+        if (g_current_online_mode == ONLINE_MODE_NO) {
+            if (link_get_first_music(&next_song) != 0) {
+                return -1;
+            }
+            ret = 0;
+        } else {
+            keyword = (g_playlist_ctx.keyword[0] != '\0') ? g_playlist_ctx.keyword : "热门";
+            if (player_prepare_keyword_playlist(keyword, 0) <= 0) {
+                return -1;
+            }
+            if (s.current_source[0] == '\0' || s.current_song_id[0] == '\0') {
+                if (link_get_first_music(&next_song) != 0) {
+                    return -1;
+                }
+                ret = 0;
+            } else {
+                ret = link_get_next_music(s.current_source, s.current_song_id, s.current_mode, 1, &next_song);
+                if (ret == -1 && link_get_first_music(&next_song) == 0) {
+                    ret = 0;
+                }
+            }
+        }
+    }
     if (ret == 1) {
-        if (player_playlist_load_next_page() <= 0 || link_get_first_music(&next_song) != 0) {
+        if (g_current_online_mode == ONLINE_MODE_NO) {
+            if (s.current_mode == SINGLE_PLAY) {
+                if (link_get_next_music(s.current_source, s.current_song_id, SINGLE_PLAY, 0, &next_song) != 0) {
+                    return 1;
+                }
+            } else if (link_get_first_music(&next_song) != 0) {
+                return 1;
+            }
+        } else if (player_playlist_load_next_page() <= 0 || link_get_first_music(&next_song) != 0) {
             return 1;
         }
     } else if (ret != 0) {
@@ -425,8 +665,6 @@ int player_next_song()
     }
     update_shm_current_song(&s, &next_song);
     shm_set(&s);
-    g_current_state = PLAY_STATE_PLAY;
-    g_current_suspend = PLAY_SUSPEND_NO;
     if (was_stopped) {
         s.child_pid = 0;
         s.grand_pid = 0;
@@ -434,8 +672,12 @@ int player_next_song()
         player_start_play();
         return 0;
     }
-    if (s.child_pid > 0 && kill(s.child_pid, 0) == 0) {
-        if (player_write_fifo("quit\n") != 0) return -1;
+    shm_get(&s);
+    if (pid_is_alive(s.child_pid)) {
+        g_current_state = PLAY_STATE_PLAY;
+        g_current_suspend = PLAY_SUSPEND_NO;
+        player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
+        stop_active_grandchild(0);
         return 0;
     }
     player_start_play();
@@ -447,16 +689,28 @@ int player_prev_song()
     Shm_Data s;
     Music_Node prev_song;
     int ret;
+    int was_stopped;
+    was_stopped = (g_current_state == PLAY_STATE_STOP);
     shm_get(&s);
     memset(&prev_song, 0, sizeof(prev_song));
-    ret = link_get_prev_music(s.current_source, s.current_song_id, &prev_song);
+    ret = link_get_prev_music(s.current_source, s.current_song_id,
+                              (g_current_online_mode == ONLINE_MODE_NO), &prev_song);
     if (ret != 0 && ret != 1) return -1;
     update_shm_current_song(&s, &prev_song);
     shm_set(&s);
-    g_current_state = PLAY_STATE_PLAY;
-    g_current_suspend = PLAY_SUSPEND_NO;
-    if (s.child_pid > 0 && kill(s.child_pid, 0) == 0) {
-        if (player_write_fifo("quit\n") != 0) return -1;
+    if (was_stopped) {
+        s.child_pid = 0;
+        s.grand_pid = 0;
+        shm_set(&s);
+        player_start_play();
+        return 0;
+    }
+    shm_get(&s);
+    if (pid_is_alive(s.child_pid)) {
+        g_current_state = PLAY_STATE_PLAY;
+        g_current_suspend = PLAY_SUSPEND_NO;
+        player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
+        stop_active_grandchild(0);
         return 0;
     }
     player_start_play();
@@ -485,8 +739,47 @@ void player_handle_playlist_eof(int sig)
     (void)sig;
     g_current_state = PLAY_STATE_STOP;
     g_current_suspend = PLAY_SUSPEND_YES;
-    if (player_playlist_load_next_page() > 0) {
-        player_start_play();
+    player_set_audio_focus(AUDIO_FOCUS_IDLE);
+    g_playlist_eof_flag = 1;
+}
+
+void player_process_async_events(void)
+{
+    if (g_child_exit_flag) {
+        while (waitpid(-1, NULL, WNOHANG) > 0) {
+        }
+        g_child_exit_flag = 0;
+    }
+    if (g_playlist_eof_flag) {
+        g_playlist_eof_flag = 0;
+        if (g_eof_autostart_suppressed) {
+            g_eof_autostart_suppressed = 0;
+            return;
+        }
+        if (g_current_online_mode == ONLINE_MODE_NO) {
+            Shm_Data s;
+            Music_Node next_song;
+            int adv;
+            shm_get(&s);
+            if (s.current_mode == SINGLE_PLAY) {
+                player_start_play();
+            } else {
+                memset(&next_song, 0, sizeof(next_song));
+                adv = link_get_next_music(s.current_source, s.current_song_id, s.current_mode, 1, &next_song);
+                if (adv == 1) {
+                    if (link_get_first_music(&next_song) != 0) {
+                        return;
+                    }
+                } else if (adv != 0) {
+                    return;
+                }
+                update_shm_current_song(&s, &next_song);
+                shm_set(&s);
+                player_start_play();
+            }
+        } else if (player_playlist_load_next_page() > 0) {
+            player_start_play();
+        }
     }
 }
 
@@ -509,6 +802,7 @@ int player_play_url(const char *url)
     if (player_write_fifo(cmd) != 0) return -1;
     g_current_state = PLAY_STATE_PLAY;
     g_current_suspend = PLAY_SUSPEND_NO;
+    player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
     return 0;
 }
 
@@ -541,6 +835,22 @@ static int unmount_storage_path(const char *mount_path)
     if (umount(mount_path) == 0) return 0;
     if (errno == EINVAL || errno == ENOENT) return 0;
     return -1;
+}
+
+void player_apply_env_mode(void)
+{
+    const char *v = getenv(PLAYER_MODE_ENV);
+    g_env_forces_offline = 0;
+    if (v != NULL && strcasecmp(v, "offline") == 0) {
+        g_env_forces_offline = 1;
+        g_current_online_mode = ONLINE_MODE_NO;
+        asr_kws_switch_offline_mode();
+    }
+}
+
+int player_env_forces_offline(void)
+{
+    return g_env_forces_offline;
 }
 
 int player_switch_offline_mode(void)
@@ -585,6 +895,7 @@ int player_switch_offline_mode(void)
     g_current_online_mode = ONLINE_MODE_NO;
     g_current_state = PLAY_STATE_STOP;
     g_current_suspend = PLAY_SUSPEND_YES;
+    player_set_audio_focus(AUDIO_FOCUS_IDLE);
     tts_play_text("已切换到离线模式");
     return 0;
 }
@@ -611,6 +922,7 @@ int player_switch_online_mode(void)
     g_current_online_mode = ONLINE_MODE_YES;
     g_current_state = PLAY_STATE_STOP;
     g_current_suspend = PLAY_SUSPEND_YES;
+    player_set_audio_focus(AUDIO_FOCUS_IDLE);
     tts_play_text("已切换到在线模式");
     return 0;
 }
