@@ -25,40 +25,37 @@
   <g stroke="#22d3ee" stroke-width="1" opacity="0.08">
     <line x1="0" y1="110" x2="920" y2="110"/><line x1="0" y1="220" x2="920" y2="220"/><line x1="0" y1="330" x2="920" y2="330"/>
   </g>
-  <!-- centered cabinet: front baffle + drivers -->
-  <g transform="translate(290,34)">
-    <rect x="0" y="0" width="340" height="372" rx="20" fill="url(#ncf-cab)" stroke="#22d3ee" stroke-width="2.6" filter="url(#ncf-edge)"/>
-    <rect x="0" y="0" width="340" height="372" rx="20" fill="none" stroke="#67e8f9" stroke-width="1.1" opacity="0.45"/>
-    <rect x="24" y="28" width="292" height="286" rx="10" fill="rgba(8,20,35,0.25)" stroke="#5eead4" stroke-width="1.3" opacity="0.9"/>
+  <g transform="translate(320,58)">
+    <rect x="0" y="0" width="280" height="312" rx="17" fill="url(#ncf-cab)" stroke="#22d3ee" stroke-width="2.4" filter="url(#ncf-edge)"/>
+    <rect x="0" y="0" width="280" height="312" rx="17" fill="none" stroke="#67e8f9" stroke-width="1" opacity="0.45"/>
+    <rect x="18" y="22" width="244" height="238" rx="9" fill="rgba(8,20,35,0.25)" stroke="#5eead4" stroke-width="1.2" opacity="0.9"/>
     <g stroke="#22d3ee" stroke-width="1" opacity="0.35" fill="none">
-      <circle cx="52" cy="52" r="3"/><circle cx="288" cy="52" r="3"/><circle cx="52" cy="290" r="3"/><circle cx="288" cy="290" r="3"/>
+      <circle cx="40" cy="40" r="3"/><circle cx="240" cy="40" r="3"/><circle cx="40" cy="242" r="3"/><circle cx="240" cy="242" r="3"/>
     </g>
-    <!-- tweeter dome -->
-    <g transform="translate(170,88)">
-      <circle r="20" fill="none" stroke="#22d3ee" stroke-width="2.2"/>
-      <circle r="14" fill="rgba(103,232,249,0.12)" stroke="#67e8f9" stroke-width="1.2"/>
-      <path d="M -10 -6 Q 0 -14 10 -6" fill="none" stroke="#a5f3fc" stroke-width="1.4" stroke-linecap="round"/>
-      <circle r="5" fill="rgba(165,243,252,0.35)" stroke="#ecfeff" stroke-width="0.8"/>
+    <!-- tweeter: larger dome vs previous small circle -->
+    <g transform="translate(140,78)">
+      <circle r="24" fill="none" stroke="#22d3ee" stroke-width="2"/>
+      <circle r="17" fill="rgba(103,232,249,0.12)" stroke="#67e8f9" stroke-width="1.15"/>
+      <path d="M -12 -7 Q 0 -17 12 -7" fill="none" stroke="#a5f3fc" stroke-width="1.35" stroke-linecap="round"/>
+      <circle r="7" fill="rgba(165,243,252,0.35)" stroke="#ecfeff" stroke-width="0.75"/>
     </g>
-    <!-- woofer: surround ring + cone + ribs + dust cap -->
-    <g transform="translate(170,218)">
-      <circle r="92" fill="none" stroke="#22d3ee" stroke-width="3" opacity="0.9"/>
-      <circle r="78" fill="url(#ncf-cone)" stroke="#06b6d4" stroke-width="1.2" opacity="0.95"/>
-      <g stroke="#22d3ee" stroke-width="1.1" stroke-linecap="round" opacity="0.45">
-        <line x1="0" y1="-24" x2="0" y2="-64"/><line x1="17" y1="-17" x2="45.3" y2="-45.3"/>
-        <line x1="24" y1="0" x2="64" y2="0"/><line x1="17" y1="17" x2="45.3" y2="45.3"/>
-        <line x1="0" y1="24" x2="0" y2="64"/><line x1="-17" y1="17" x2="-45.3" y2="45.3"/>
-        <line x1="-24" y1="0" x2="-64" y2="0"/><line x1="-17" y1="-17" x2="-45.3" y2="-45.3"/>
+    <!-- woofer: smaller surround vs cabinet than before -->
+    <g transform="translate(140,188)">
+      <circle r="64" fill="none" stroke="#22d3ee" stroke-width="2.6" opacity="0.9"/>
+      <circle r="54" fill="url(#ncf-cone)" stroke="#06b6d4" stroke-width="1.1" opacity="0.95"/>
+      <g stroke="#22d3ee" stroke-width="1" stroke-linecap="round" opacity="0.45">
+        <line x1="0" y1="-18" x2="0" y2="-48"/><line x1="12.7" y1="-12.7" x2="33.9" y2="-33.9"/>
+        <line x1="18" y1="0" x2="48" y2="0"/><line x1="12.7" y1="12.7" x2="33.9" y2="33.9"/>
+        <line x1="0" y1="18" x2="0" y2="48"/><line x1="-12.7" y1="12.7" x2="-33.9" y2="33.9"/>
+        <line x1="-18" y1="0" x2="-48" y2="0"/><line x1="-12.7" y1="-12.7" x2="-33.9" y2="-33.9"/>
       </g>
-      <circle r="22" fill="rgba(15,30,50,0.5)" stroke="#a5f3fc" stroke-width="1.4"/>
-      <circle r="10" fill="rgba(236,254,255,0.15)" stroke="#cffafe" stroke-width="0.8"/>
+      <circle r="18" fill="rgba(15,30,50,0.5)" stroke="#a5f3fc" stroke-width="1.25"/>
+      <circle r="9" fill="rgba(236,254,255,0.15)" stroke="#cffafe" stroke-width="0.75"/>
     </g>
-    <!-- bass-reflex port -->
-    <rect x="118" y="308" width="104" height="22" rx="11" fill="rgba(6,20,40,0.55)" stroke="#22d3ee" stroke-width="1.4"/>
-    <ellipse cx="170" cy="319" rx="38" ry="7" fill="none" stroke="#67e8f9" stroke-width="0.8" opacity="0.4"/>
-    <!-- plinth -->
-    <rect x="12" y="358" width="316" height="14" rx="5" fill="rgba(34,211,238,0.08)" stroke="#22d3ee" stroke-width="1.2"/>
-    <rect x="48" y="374" width="44" height="6" rx="2" fill="#22d3ee" opacity="0.35"/>
-    <rect x="248" y="374" width="44" height="6" rx="2" fill="#22d3ee" opacity="0.35"/>
+    <rect x="96" y="258" width="88" height="18" rx="9" fill="rgba(6,20,40,0.55)" stroke="#22d3ee" stroke-width="1.25"/>
+    <ellipse cx="140" cy="267" rx="32" ry="6" fill="none" stroke="#67e8f9" stroke-width="0.75" opacity="0.4"/>
+    <rect x="10" y="298" width="260" height="12" rx="4" fill="rgba(34,211,238,0.08)" stroke="#22d3ee" stroke-width="1.1"/>
+    <rect x="40" y="312" width="36" height="5" rx="2" fill="#22d3ee" opacity="0.35"/>
+    <rect x="204" y="312" width="36" height="5" rx="2" fill="#22d3ee" opacity="0.35"/>
   </g>
 </svg>
