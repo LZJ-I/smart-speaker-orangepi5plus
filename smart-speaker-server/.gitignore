@@ -1,0 +1,5 @@
+# build
+server_smart_speaker
+src/*.o
+tests/test_client
+tests/test_app
