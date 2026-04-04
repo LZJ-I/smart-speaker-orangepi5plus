@@ -1,6 +1,6 @@
 # smart-speaker-qtApp
 
-![Qt 控制端（霓虹赛博）](../docs/readme-illustrations/neon-qtapp-focus.svg)
+![Qt 控制端（霓虹赛博）](../readme-illustrations/neon-qtapp-focus.svg)
 
 基于 **Qt Widgets** 的桌面控制端，经 **TCP** 与 `smart-speaker-server` 通信（长度前缀 + JSON）。工程入口：`smart_speaker_app.pro`。
 
