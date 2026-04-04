@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420" role="img" aria-labelledby="t d">
+  <title id="t">Style preview: industrial plaque</title>
+  <desc id="d">Dark panel, brass frame, client server and Qt app</desc>
+  <defs>
+    <linearGradient id="ig" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a2218"/>
+      <stop offset="100%" stop-color="#0f0c08"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="ma" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8 z" fill="#c9a227"/>
+    </marker>
+    <marker id="mb" markerWidth="8" markerHeight="8" refX="2" refY="4" orient="auto">
+      <path d="M8 0 L0 4 L8 8 z" fill="#c9a227"/>
+    </marker>
+  </defs>
+  <rect width="920" height="420" fill="url(#ig)"/>
+  <rect x="24" y="24" width="872" height="372" fill="none" stroke="#8b6914" stroke-width="2" rx="4"/>
+  <g fill="#c9a227" font-family="Georgia, 'Times New Roman', serif" font-size="13" letter-spacing="0.12em">
+    <text x="460" y="52" text-anchor="middle">SMART SPEAKER - SYSTEM MAP</text>
+  </g>
+  <g stroke="#a67c00" stroke-width="1.2" fill="none" opacity="0.85">
+    <circle cx="60" cy="92" r="3" fill="#c9a227"/><circle cx="860" cy="92" r="3" fill="#c9a227"/>
+    <circle cx="60" cy="328" r="3" fill="#c9a227"/><circle cx="860" cy="328" r="3" fill="#c9a227"/>
+  </g>
+  <g transform="translate(80,140)" filter="url(#glow)">
+    <rect width="200" height="160" rx="6" fill="#1a140e" stroke="#c9a227" stroke-width="2"/>
+    <rect x="16" y="20" width="168" height="8" fill="#3d2f1a" stroke="#8b6914"/>
+    <circle cx="100" cy="88" r="28" fill="none" stroke="#c9a227" stroke-width="1.5"/>
+    <path d="M88 88h24M100 76v24" stroke="#c9a227" stroke-width="1.2"/>
+    <text x="100" y="138" text-anchor="middle" fill="#e8d4a8" font-family="Georgia, serif" font-size="14">Client</text>
+    <text x="100" y="156" text-anchor="middle" fill="#8b7355" font-family="sans-serif" font-size="10">OrangePi device</text>
+  </g>
+  <g transform="translate(360,130)" filter="url(#glow)">
+    <rect width="200" height="180" rx="6" fill="#1a140e" stroke="#c9a227" stroke-width="2"/>
+    <rect x="20" y="24" width="160" height="22" rx="2" fill="#2a2218" stroke="#8b6914"/>
+    <rect x="20" y="54" width="160" height="22" rx="2" fill="#2a2218" stroke="#8b6914"/>
+    <rect x="20" y="84" width="160" height="22" rx="2" fill="#2a2218" stroke="#8b6914"/>
+    <text x="100" y="138" text-anchor="middle" fill="#e8d4a8" font-family="Georgia, serif" font-size="14">Server</text>
+    <text x="100" y="156" text-anchor="middle" fill="#8b7355" font-family="sans-serif" font-size="10">Library / API</text>
+  </g>
+  <g transform="translate(640,150)" filter="url(#glow)">
+    <rect width="200" height="140" rx="14" fill="#1a140e" stroke="#c9a227" stroke-width="2"/>
+    <rect x="18" y="28" width="164" height="72" rx="4" fill="#0f0c08" stroke="#8b6914"/>
+    <rect x="78" y="108" width="44" height="6" rx="2" fill="#5c4a2e"/>
+    <text x="100" y="138" text-anchor="middle" fill="#e8d4a8" font-family="Georgia, serif" font-size="14">Qt App</text>
+    <text x="100" y="156" text-anchor="middle" fill="#8b7355" font-family="sans-serif" font-size="10">Desktop UI</text>
+  </g>
+  <g stroke="#c9a227" stroke-width="1.5" fill="none" marker-end="url(#ma)" marker-start="url(#mb)" opacity="0.9">
+    <path d="M280 220 H360"/>
+    <path d="M560 220 H640"/>
+    <path d="M740 150 C 820 120, 820 300, 180 300 C 120 300, 120 250, 180 220" stroke-dasharray="6 4" opacity="0.55"/>
+  </g>
+  <text x="460" y="392" text-anchor="middle" fill="#6b5a45" font-family="sans-serif" font-size="11">Industrial plaque</text>
+</svg>
