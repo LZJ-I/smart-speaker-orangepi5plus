@@ -24,6 +24,11 @@
   "total": 1
 }
 
+3b. 在线列表分页（无 keyword，全库伪随机顺序缓存后分页）
+请求：
+{ "cmd": "list_music", "page": 1, "page_size": 10 }
+响应字段同 reply_search_music，但 cmd 为 reply_list_music。
+
 4. APP 控制命令
 app_start_play
 app_stop_play

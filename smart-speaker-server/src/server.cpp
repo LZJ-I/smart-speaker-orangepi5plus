@@ -121,6 +121,58 @@ void collect_music_by_singer(const std::string &singer, std::vector<MusicFileInf
     closedir(dir);
 }
 
+void collect_all_music(std::vector<MusicFileInfo> &out)
+{
+    std::string root = music_root_path();
+    DIR *r = opendir(root.c_str());
+    if (r == NULL) {
+        return;
+    }
+
+    struct dirent *singer_entry;
+    while ((singer_entry = readdir(r)) != NULL) {
+        if (singer_entry->d_name[0] == '.') {
+            continue;
+        }
+        if (singer_entry->d_type != DT_DIR) {
+            if (singer_entry->d_type == DT_REG || singer_entry->d_type == DT_UNKNOWN) {
+                if (!dirent_is_reg_audio(root, singer_entry)) {
+                    continue;
+                }
+                MusicFileInfo info;
+                info.singer.clear();
+                info.song = singer_entry->d_name;
+                info.path = info.song;
+                out.push_back(info);
+            }
+            continue;
+        }
+
+        std::string singer = singer_entry->d_name;
+        std::string singer_dir = root + singer;
+        if (singer_dir.empty() || singer_dir.back() != '/')
+            singer_dir += '/';
+        DIR *dir = opendir(singer_dir.c_str());
+        if (dir == NULL) {
+            continue;
+        }
+
+        struct dirent *song_entry;
+        while ((song_entry = readdir(dir)) != NULL) {
+            if (!dirent_is_reg_audio(singer_dir, song_entry)) {
+                continue;
+            }
+            MusicFileInfo info;
+            info.singer = singer;
+            info.song = song_entry->d_name;
+            info.path = singer + "/" + info.song;
+            out.push_back(info);
+        }
+        closedir(dir);
+    }
+    closedir(r);
+}
+
 void collect_music_by_keyword(const std::string &keyword, std::vector<MusicFileInfo> &out)
 {
     std::string root = music_root_path();
@@ -206,7 +258,7 @@ void ensure_list_music_cache(void)
         return;
     }
     g_list_music_cache.clear();
-    collect_music_by_keyword("", g_list_music_cache);
+    collect_all_music(g_list_music_cache);
     if (g_list_music_cache.size() > 1) {
         unsigned random_seed = std::chrono::system_clock::now().time_since_epoch().count();
         std::shuffle(g_list_music_cache.begin(), g_list_music_cache.end(), std::default_random_engine(random_seed));
