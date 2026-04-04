@@ -44,9 +44,17 @@ FLUSH PRIVILEGES;
 
 服务端 **不** 内置 HTTP；设备在线播放 URL 一般为 `http://<主机>/music/...`，需本机安装 Apache（或 nginx）并把站点根指到放歌的目录。
 
+**安装与启动（简要）**
+
 ```bash
+sudo apt update
 sudo apt install -y apache2
+sudo systemctl enable apache2   # 开机自启（可选）
+sudo systemctl start apache2
+sudo systemctl status apache2   # 应显示 active (running)
 ```
+
+本机可测：`curl -I http://127.0.0.1/` 应返回 `HTTP/1.1 200`。若改配置后需重载：`sudo systemctl reload apache2`；停止：`sudo systemctl stop apache2`。
 
 默认 `DocumentRoot` 为 `/var/www/html`。把歌曲放到：
 
