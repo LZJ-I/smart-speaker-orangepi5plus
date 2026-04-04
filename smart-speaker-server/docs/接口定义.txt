@@ -1,0 +1,44 @@
+协议封包：4 字节消息长度 + JSON 字符串
+
+1. 设备上报
+{ "cmd": "device_report", "cur_singer": "未知歌手", "cur_music": "稻香.mp3", "cur_mode": 0, "state": "play", "deviceid": "0001", "cur_volume": 78 }
+
+2. 按歌手获取音乐
+请求：
+{ "cmd": "get_music", "singer": "周杰伦" }
+响应：
+{ "cmd": "reply_music", "music": ["周杰伦/稻香.mp3", "周杰伦/晴天.mp3"] }
+
+3. 关键词搜索音乐
+请求：
+{ "cmd": "search_music", "keyword": "周杰伦", "page": 1, "page_size": 10 }
+响应：
+{
+  "cmd": "reply_search_music",
+  "result": "ok",
+  "music": [
+    { "singer": "周杰伦", "song": "稻香.mp3", "path": "周杰伦/稻香.mp3" }
+  ],
+  "page": 1,
+  "total_pages": 1,
+  "total": 1
+}
+
+4. APP 控制命令
+app_start_play
+app_stop_play
+app_suspend_play
+app_continue_play
+app_play_next_song
+app_play_prev_song
+app_add_volume
+app_sub_volume
+app_order_mode
+app_single_mode
+app_random_mode
+app_get_music_list
+
+5. 账号命令
+app_register
+app_bind
+app_login
