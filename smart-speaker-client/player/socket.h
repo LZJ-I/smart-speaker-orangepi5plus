@@ -49,6 +49,7 @@ void socket_upload_music_list();
 
 // 断开服务器
 int socket_disconnect();
+void socket_close_connection(void);
 // 连接服务器
 int socket_connect();
 #endif

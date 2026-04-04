@@ -838,13 +838,6 @@ static int detect_storage_device(char *out, size_t out_size)
     return -1;
 }
 
-static int unmount_storage_path(const char *mount_path)
-{
-    if (umount(mount_path) == 0) return 0;
-    if (errno == EINVAL || errno == ENOENT) return 0;
-    return -1;
-}
-
 static int path_is_mounted_at(const char *path)
 {
     FILE *f;
@@ -966,7 +959,6 @@ int player_env_forces_offline(void)
 
 int player_switch_offline_mode(void)
 {
-    char udisk_name[128] = {0};
     Music_Node first_song;
     Shm_Data s;
     if (g_current_online_mode == ONLINE_MODE_NO) {
@@ -974,24 +966,13 @@ int player_switch_offline_mode(void)
         return 0;
     }
     player_stop_play();
-    if (detect_storage_device(udisk_name, sizeof(udisk_name)) != 0) {
-        tts_play_text("请先插入存储设备");
-        return 1;
-    }
+    socket_close_connection();
     player_write_fifo("quit\n");
     sleep(1);
-    if (unmount_storage_path(SDCARD_MOUNT_PATH) != 0) {
-        tts_play_text("卸载存储设备失败");
-        return -1;
-    }
-    if (access(SDCARD_MOUNT_PATH, F_OK) != 0 && mkdir(SDCARD_MOUNT_PATH, 0777) != 0) {
-        tts_play_text("创建挂载存储设备目录失败");
-        return -1;
-    }
-    if (mount(udisk_name, SDCARD_MOUNT_PATH, "exfat", 0, NULL) != 0 &&
-        mount(udisk_name, SDCARD_MOUNT_PATH, NULL, 0, NULL) != 0) {
-        tts_play_text("创建挂载存储设备失败");
-        return -1;
+    sync();
+    if (player_ensure_sdcard_mounted() != 0) {
+        tts_play_text("请先插入存储设备");
+        return 1;
     }
     if (music_lib_load_all_local_to_link() != 0) {
         tts_play_text("切换离线模式失败，无法读取存储设备歌曲");
@@ -1025,6 +1006,7 @@ int player_switch_online_mode(void)
         tts_play_text("当前为在线模式，无需切换");
         return 0;
     }
+    socket_close_connection();
     if (socket_connect() != 0) {
         player_offline_init_storage_and_library(0);
         return -1;
@@ -1032,7 +1014,6 @@ int player_switch_online_mode(void)
     player_stop_play();
     player_write_fifo("quit\n");
     sleep(1);
-    unmount_storage_path(SDCARD_MOUNT_PATH);
     asr_kws_switch_online_mode();
     g_current_online_mode = ONLINE_MODE_YES;
     g_current_state = PLAY_STATE_STOP;

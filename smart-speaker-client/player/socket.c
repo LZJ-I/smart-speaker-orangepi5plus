@@ -27,6 +27,24 @@
 
 int g_socket_fd = -1;       // socket文件描述符
 pthread_t g_report_tid;     // 定时上报数据线程的线程id
+static int g_socket_report_thread_started;
+
+void socket_close_connection(void)
+{
+    if (g_socket_fd < 0) {
+        return;
+    }
+    FD_CLR(g_socket_fd, &READSET);
+    if (g_socket_report_thread_started) {
+        pthread_cancel(g_report_tid);
+        pthread_join(g_report_tid, NULL);
+        g_socket_report_thread_started = 0;
+    }
+    shutdown(g_socket_fd, SHUT_RDWR);
+    close(g_socket_fd);
+    g_socket_fd = -1;
+    update_max_fd();
+}
 
 static int socket_connect_with_timeout(int fd, const struct sockaddr_in *server_info, int timeout_ms)
 {
@@ -90,14 +108,7 @@ static int socket_server_port(void)
 
 static void socket_handle_disconnect(void)
 {
-    if (g_socket_fd < 0) {
-        return;
-    }
-    FD_CLR(g_socket_fd, &READSET);
-    close(g_socket_fd);
-    g_socket_fd = -1;
-    pthread_cancel(g_report_tid);
-    update_max_fd();
+    socket_close_connection();
     LOGW(TAG, "服务器断开，进入离线模式");
     player_offline_init_storage_and_library(1);
 }
@@ -107,6 +118,9 @@ int socket_init()
 {
     const char *server_ip = socket_server_ip();
     int server_port = socket_server_port();
+
+    socket_close_connection();
+
     // 创建套接字
     g_socket_fd = socket(AF_INET, SOCK_STREAM, 0);  // ipv4 tcp 
     if(-1 == g_socket_fd)
@@ -149,6 +163,7 @@ int socket_init()
             update_max_fd();
             return -1;
         }
+        g_socket_report_thread_started = 1;
         LOGI(TAG, "创建上报线程成功!");
 
         if (!player_env_forces_offline()) {
@@ -529,14 +544,7 @@ void socket_upload_music_list()
 // 断开服务器
 int socket_disconnect()
 {
-    // 取消 上报线程
-    pthread_cancel(g_report_tid);
-
-    // 把服务端 fd 从监听集合取消 并 释放
-    FD_CLR(g_socket_fd, &READSET);
-    update_max_fd();
-    close(g_socket_fd);
-
+    socket_close_connection();
     return 0;
 }
 
