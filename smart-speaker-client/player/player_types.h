@@ -21,6 +21,15 @@ enum {
     ONLINE_MODE_YES
 };
 
+enum {
+    AUDIO_FOCUS_IDLE,
+    AUDIO_FOCUS_MUSIC_PLAYING,
+    AUDIO_FOCUS_MUSIC_PAUSED_MANUAL,
+    AUDIO_FOCUS_MUSIC_PAUSED_FOR_TTS,
+    AUDIO_FOCUS_TTS_PLAYING,
+    AUDIO_FOCUS_MUSIC_RESUMING
+};
+
 typedef struct {
     char keyword[256];
     int current_page;
