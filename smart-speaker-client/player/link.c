@@ -254,9 +254,10 @@ void link_clear_list(void)
     }
 }
 
-int link_get_prev_music(const char *cur_source, const char *cur_song_id, Music_Node *prev_music)
+int link_get_prev_music(const char *cur_source, const char *cur_song_id, int wrap_at_head, Music_Node *prev_music)
 {
     Music_Node *target_node = NULL;
+    Music_Node *tail;
     if (prev_music == NULL || g_music_head == NULL || g_music_head->next == NULL) {
         return -1;
     }
@@ -265,6 +266,14 @@ int link_get_prev_music(const char *cur_source, const char *cur_song_id, Music_N
         return -1;
     }
     if (target_node->prev == NULL || target_node->prev == g_music_head) {
+        if (wrap_at_head) {
+            tail = g_music_head;
+            while (tail->next != NULL) {
+                tail = tail->next;
+            }
+            copy_node_value(prev_music, tail);
+            return 0;
+        }
         copy_node_value(prev_music, target_node);
         return 1;
     }

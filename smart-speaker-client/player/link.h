@@ -5,8 +5,8 @@
 
 #define MUSIC_MAX_NAME 256
 #define SINGER_MAX_NAME 128
-#define MUSIC_SOURCE_MAX 8
-#define MUSIC_ID_MAX 64
+#define MUSIC_SOURCE_MAX 16
+#define MUSIC_ID_MAX 256
 
 #define GET_MAX_MUSIC  5 // 单次获取歌曲数量
 
@@ -38,7 +38,7 @@ int link_get_next_music(const char *cur_source, const char *cur_song_id, int mod
 // 清空链表
 void link_clear_list(void);
 // 根据当前歌曲，找到上一首歌
-int link_get_prev_music(const char *cur_source, const char *cur_song_id, Music_Node *prev_music);
+int link_get_prev_music(const char *cur_source, const char *cur_song_id, int wrap_at_head, Music_Node *prev_music);
 
 // 读取U盘内歌曲到链表
 int link_read_udisk_music(void);
