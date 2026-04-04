@@ -37,7 +37,7 @@
 
 - `timeout 10s ./tts_process`
   - 结果：成功启动，进入“等待命令”
-- `timeout 10s ./player/player`
+- `timeout 10s ./player/run`
   - 结果：成功启动并完成初始化（被 timeout 截断）
 - `timeout 10s ./asr_kws_process`
   - 结果：成功启动并进入关键词识别模式（被 timeout 截断）
@@ -46,7 +46,7 @@
 
 - `./smart-speaker-client/tts_process` -> 退出，提示 cwd 错误
 - `./smart-speaker-client/asr_kws_process` -> 退出，提示 cwd 错误
-- `./smart-speaker-client/player/player` -> 退出，提示 cwd 错误
+- `./smart-speaker-client/player/run` -> 退出，提示 cwd 错误
 
 结论：运行目录约束校验生效，行为符合设计。
 
@@ -94,7 +94,7 @@
 
 测试方法（实测）：
 
-1. 启动 `tts_process` 与 `player/player`；
+1. 启动 `tts_process` 与 `player/run`；
 2. 先发送长文本到 `tts_fifo`（触发长时间 TTS 生成/播放）；
 3. 随后向 `kws_fifo` 注入关键词 `小米小米`。
 

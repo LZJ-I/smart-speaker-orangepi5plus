@@ -1,6 +1,6 @@
 # smart-speaker-client 框架重构说明
 
-**说明**：本文描述的是计划中的 framework 公共层与目录调整方案，**当前代码库未按此全文落地**。现有结构为 `player/`、`voice-assistant/`、`ipc/` 等，详见 `docs/smart-speaker-client-目录框架重构规范.md` 中的「当前目录结构」。
+**说明**：本文描述的是计划中的 framework 公共层与目录调整方案，**当前代码库未按此全文落地**。`player` 已拆为 `core/`、`net/`、`select_loop/`、`device/`、`rules/`、`bridge/`、`music_source/` 等，详见 `docs/smart-speaker-client-目录框架重构规范.md`。
 
 ---
 
@@ -31,7 +31,7 @@
 
 在以下进程入口加入统一 cwd 校验（必须在 `smart-speaker-client` 目录运行）：
 
-- `player/main.c`
+- `player/core/main.c`
 - `voice-assistant/main_asr_kws/main.c`
 - `voice-assistant/main_tts/main.c`
 
@@ -39,18 +39,18 @@
 
 ### 3) IPC 与信号链路公共化
 
-- `player/player.c`
+- `player/core/player.c`
   - 管道创建/打开改为复用 `fifo_utils`
   - `asr_kws` 信号通知改为复用 `process_utils`（多候选进程名匹配）
 - `voice-assistant/main_asr_kws/main.c`
   - 管道创建、非阻塞打开、写入重连逻辑改为复用 `fifo_utils`
-- `player/select.c`（及当前拆分后的 select_text、select_music_llm）
+- `player/select_loop/select.c`（及 `select_text`、`select_music_llm`）
   - `tts_process` PID 获取改为复用 `process_utils`（计划中）
 
 ### 4) 路径与模型配置收敛
 
 - `voice-assistant/common/ipc_protocol.h` 改为引用 `framework/app_paths.h` 的统一路径常量
-- `player/player.h` 管道路径改为引用公共常量
+- `player/core/player.h` 管道路径改为引用公共常量
 - `voice-assistant/asr/sherpa_asr.c`
 - `voice-assistant/kws/sherpa_kws.c`
 - `voice-assistant/tts/sherpa_tts.c`

@@ -17,7 +17,14 @@ smart-speaker-client/
   assets/
   fifo/                 # 运行时 FIFO（init.sh 创建）
   ipc/                  # ipc_message.c/h 统一 IPC 协议
-  player/               # 播放器、select、socket、device、rule_match 等
+  player/               # 播放器（见下子目录）
+  player/core/          # main、player、shm、fifo、gst、constants、types
+  player/net/           # link、socket、socket_report
+  player/select_loop/   # select、select_text、select_music_llm
+  player/device/
+  player/rules/         # rule_match
+  player/bridge/        # music_lib_bridge
+  player/music_source/  # local/server/manager
   voice-assistant/      # main_asr_kws、main_tts、asr/kws/tts/llm/common
   music-lib/            # Rust 音乐库
   supervisor/
@@ -33,12 +40,12 @@ smart-speaker-client/
 - `voice-assistant/main_tts`：TTS 进程（main + tts_playback + tts_ipc_handler）；产物根目录 `tts_process`，安装到 `build/bin/`。
 - `player`：音乐控制状态机（父子孙模型）、select 多路 IO、规则/LLM 路由；产物 `player/run`，安装为 `build/bin/player_run`。
 - `ipc`：统一消息头与读写（ipc_message.c/h）。
-- 规则与 LLM：`player/rule_match.c`、`player/select_music_llm.c`，LLM 在 `voice-assistant/llm/`。
+- 规则与 LLM：`player/rules/rule_match.c`、`player/select_loop/select_music_llm.c`，LLM 在 `voice-assistant/llm/`。
 
 ## 重构原则
 
 - 单向依赖：业务模块依赖 ipc/公共头，避免反向依赖。
-- 配置外置：设备、挂载点等可写入 `config`；FIFO 路径见 `ipc_protocol.h`、`player_constants.h`。
+- 配置外置：设备、挂载点等可写入 `config`；FIFO 路径见 `ipc_protocol.h`、`player/core/player_constants.h`。
 - 运行目录：FIFO 当前在 `./fifo`（player/init.sh 创建）；可执行由 `make install_bins` 装入 `build/bin`。
 - 第三方只读：`3rdparty/` 路径保持稳定。
 

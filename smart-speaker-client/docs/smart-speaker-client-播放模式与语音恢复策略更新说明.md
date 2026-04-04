@@ -14,16 +14,16 @@
 
 | 文件 | 修改内容 |
 |------|----------|
-| `player/player_types.h` | 枚举删除 `RANDOM_PLAY`，保留 `ORDER_PLAY`、`SINGLE_PLAY` |
-| `player/rule_match.h` | 删除 `RULE_CMD_MODE_RANDOM` |
-| `player/rule_match.c` | 删除 `match_mode_random`、规则表中随机项、控制词中「随机播放」、`rule_cmd_to_string` 对应 case |
-| `player/link.c` | `link_get_next_music()` 中删除 `RANDOM_PLAY` 分支及原 `list_count()` 等未用逻辑 |
-| `player/player.c` | `player_set_mode()` 仅接受 `SINGLE_PLAY`/`ORDER_PLAY` |
-| `player/select.c` | 删除 `RULE_CMD_MODE_RANDOM` 分支；`Parse_server_cmd` 中删除 `app_random_mode` 处理 |
-| `player/select_text.c` | 控制意图关键词中删除「随机播放」 |
-| `player/socket.c` | 删除 `socket_set_random_mode()` |
-| `player/socket.h` | 删除 `socket_set_random_mode` 声明 |
-| `player/shm.h` | `current_mode` 注释改为「0-顺序播放 1-单曲循环」 |
+| `player/core/player_types.h` | 枚举删除 `RANDOM_PLAY`，保留 `ORDER_PLAY`、`SINGLE_PLAY` |
+| `player/rules/rule_match.h` | 删除 `RULE_CMD_MODE_RANDOM` |
+| `player/rules/rule_match.c` | 删除 `match_mode_random`、规则表中随机项、控制词中「随机播放」、`rule_cmd_to_string` 对应 case |
+| `player/net/link.c` | `link_get_next_music()` 中删除 `RANDOM_PLAY` 分支及原 `list_count()` 等未用逻辑 |
+| `player/core/player.c` | `player_set_mode()` 仅接受 `SINGLE_PLAY`/`ORDER_PLAY` |
+| `player/select_loop/select.c` | 删除 `RULE_CMD_MODE_RANDOM` 分支；`Parse_server_cmd` 中删除 `app_random_mode` 处理 |
+| `player/select_loop/select_text.c` | 控制意图关键词中删除「随机播放」 |
+| `player/net/socket.c` | 删除 `socket_set_random_mode()` |
+| `player/net/socket.h` | 删除 `socket_set_random_mode` 声明 |
+| `player/core/shm.h` | `current_mode` 注释改为「0-顺序播放 1-单曲循环」 |
 
 ### 1.3 当前播放模式语义
 
@@ -53,7 +53,7 @@
 
 ### 2.4 代码逻辑
 
-- `player/select.c` 中定义 `MODE_ORDER_WAV_PATH`、`MODE_SINGLE_WAV_PATH`。
+- `player/select_loop/select.c` 中定义 `MODE_ORDER_WAV_PATH`、`MODE_SINGLE_WAV_PATH`。
 - 规则命中 `RULE_CMD_MODE_ORDER` / `RULE_CMD_MODE_SINGLE` 时：先 `player_set_mode(...)`，再 `tts_play_audio_file(MODE_ORDER_WAV_PATH)` 或 `tts_play_audio_file(MODE_SINGLE_WAV_PATH)`。
 - 上述调用经 IPC 发 `IPC_CMD_PLAY_AUDIO_FILE` 给 TTS 进程，由**统一短 WAV 播放路径**（见第 4 节）播放，与唤醒词同一套 PCM/线程管线。
 
@@ -83,7 +83,7 @@
 
 ### 3.5 player 侧
 
-- **player/select.c**  
+- **player/select_loop/select.c**  
   - **select_read_asr()**：读 asr_fifo 后去掉行尾换行；若内容等于 `ASR_TIMEOUT_SENTINEL`，则若 `g_resume_after_tts` 则 `player_continue_play()`，清 `g_resume_after_tts`，return（不进行规则匹配与 LLM）。  
   - **select_read_player_ctrl()**：收到 `tts:start` 时，若当前为「播放且未暂停」则置 `g_need_continue = 1` 并暂停、置 `g_resume_after_tts = 1`；否则置 `g_need_continue = 0`。
 

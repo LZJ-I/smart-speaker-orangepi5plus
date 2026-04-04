@@ -28,7 +28,7 @@
 - `main_tts` 收到 `IPC_CMD_PLAY_AUDIO_FILE`：
   - 成功播放：上报 `tts:start` 与 `tts:done`
   - body 为空、路径为空、路径不存在、命令执行失败：统一补发 `tts:done`
-- `player/select.c` 收到 `tts:start/tts:done` 后执行暂停/恢复逻辑，不引入第二播放入口。
+- `player/select_loop/select.c` 收到 `tts:start/tts:done` 后执行暂停/恢复逻辑，不引入第二播放入口。
 
 ## 本轮补强
 

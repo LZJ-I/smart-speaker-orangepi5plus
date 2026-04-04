@@ -22,14 +22,14 @@
 
 - 不改 boot 层，**TTS 与 音乐播放共用 3.5mm**：均使用 **dmix** 设备，避免“Device or resource busy”。
 - **TTS**（`voice-assistant/main_tts/main.c`）：`playback_device = "dmix:CARD=rockchipes8388,DEV=0"`。
-- **音乐**（`player/player.h`）：`GST_ALSA_DEVICE = "dmix:CARD=rockchipes8388,DEV=0"`（GStreamer alsasink）。
+- **音乐**（`player/core/player.h`）：`GST_ALSA_DEVICE = "dmix:CARD=rockchipes8388,DEV=0"`（GStreamer alsasink）。
 - 两路同时输出时由 ALSA dmix 混音；“播 TTS 时暂停音乐、播完恢复”已通过 `./fifo/player_ctrl_fifo` 的 `tts:start` / `tts:done` 实现。
 
 ## 音量控制（键盘 7/8 或按键）
 
-- 音量加减由 **ALSA 混音器** 控制，配置在 `player/device.h`：
+- 音量加减由 **ALSA 混音器** 控制，配置在 `player/device/device.h`：
   - **CARD**：`"hw:3"`（3.5mm 为 card 3，即 rockchipes8388；用卡名字符串会报 “Invalid CTL”）。
-  - **ELEM**：`"lineout volume"`（控件名以本机 `amixer -c 3 scontrols` 为准）；若不存在则由 `player/device.c` 按优先级选第一个有播放音量的控件。
+  - **ELEM**：`"lineout volume"`（控件名以本机 `amixer -c 3 scontrols` 为准）；若不存在则由 `player/device/device.c` 按优先级选第一个有播放音量的控件。
   - 0–100 与硬件映射在 `device.c` 中为幂曲线（`VOLUME_EXP=2`），使听感更接近线性。
 
 ## hw:3,0 立体声要求（AI 必读）

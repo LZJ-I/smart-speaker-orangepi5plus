@@ -62,7 +62,7 @@
 
 ## 已落地代码点
 
-- `smart-speaker-client/player/select.c`
+- `smart-speaker-client/player/select_loop/select.c`
   - `select_read_asr()`：规则与 LLM 分流；对 `ASR_TIMEOUT_SENTINEL` 仅做恢复播放。
   - `select_read_player_ctrl()`：收到 `tts:start` 时设置 `g_need_continue` 与 `g_resume_after_tts`；收到 `tts:done` 时按 `g_resume_after_tts` 恢复播放。
 - `smart-speaker-client/voice-assistant/main_asr_kws/main.c`

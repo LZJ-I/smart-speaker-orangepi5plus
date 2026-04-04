@@ -7,7 +7,7 @@ TTS（语音播报）与 音乐播放 共用 3.5mm 声卡（rockchipes8388）。
 ## 方案：统一走 dmix
 
 - **TTS**：`voice-assistant/main_tts/main.c` 中播放设备设为 `dmix:CARD=rockchipes8388,DEV=0`。
-- **音乐**：`player/player.h` 中 `GST_ALSA_DEVICE` 设为 `dmix:CARD=rockchipes8388,DEV=0`。
+- **音乐**：`player/core/player.h` 中 `GST_ALSA_DEVICE` 设为 `dmix:CARD=rockchipes8388,DEV=0`。
 
 两路都经 dmix 后，ALSA 负责混音，可同时打开、同时出声。
 

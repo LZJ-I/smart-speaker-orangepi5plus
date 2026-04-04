@@ -12,13 +12,13 @@
 
 适用代码范围：
 
-- `player/player.c`
-- `player/link.c`, `player/link.h`
-- `player/shm.h`
-- `player/music_lib_bridge.c`, `player/music_lib_bridge.h`
-- `player/player_gst.c`
-- `player/main.c`
-- `player/select.c`
+- `player/core/player.c`
+- `player/net/link.c`, `player/net/link.h`
+- `player/core/shm.h`
+- `player/bridge/music_lib_bridge.c`, `player/bridge/music_lib_bridge.h`
+- `player/core/player_gst.c`
+- `player/core/main.c`
+- `player/select_loop/select.c`
 - `music-lib/examples/music.h`
 - `music-lib/src/lib.rs`, `music-lib/src/search.rs`
 

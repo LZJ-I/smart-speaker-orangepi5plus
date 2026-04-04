@@ -9,7 +9,7 @@
   - 新增固定音频 `assets/tts/fallback_unmatched.wav`。
   - 由 `voice-assistant/tts/example/tts_test` 生成，文案固定为“我没有理解您的意思，请换个说法吧。”。
 - player 兜底入口收敛：
-  - `player/select.c` 新增 `tts_play_audio_file(const char *path)` 单点入口。
+  - `player/select_loop/select.c` 新增 `tts_play_audio_file(const char *path)` 单点入口。
   - `RULE_CMD_PLAY_QUERY` 与 `RULE_CMD_NONE` 离线未命中统一改为播放固定 wav。
   - 新增 TTS FIFO 发送前重试打开，修复启动时序导致的 `g_tts_fd` 失效。
 - TTS 失败路径补发：
@@ -21,7 +21,7 @@
 - 联调结果：
   - 三进程由 `supervisor` 拉起：`build/bin/asr_kws_process`、`build/bin/tts_process`、`build/bin/player_run`（`make install_bins` 从 `player/run` 拷贝）。
   - 离线未命中链路已验证走固定 wav，并可看到 `tts:start` / `tts:done` 事件。
-  - （后续拆分）TTS 进程已拆为 `main_tts/main.c` + `tts_playback.c` + `tts_ipc_handler.c`；ASR_KWS 已拆出 `asr_kws_pipe.c`；player 已拆出 `player_constants.h`、`player_types.h`、`player_fifo.c`、`select_text.c`、`select_music_llm.c`、`socket_report.c`。
+  - （后续拆分）TTS 进程已拆为 `main_tts/main.c` + `tts_playback.c` + `tts_ipc_handler.c`；ASR_KWS 已拆出 `asr_kws_pipe.c`；player 已按目录拆分：`core/`（含 `player_constants.h`、`player_types.h`、`player_fifo.c` 等）、`select_loop/`（含 `select_text`、`select_music_llm`）、`net/`（含 `socket_report`）等。
 
 - 语义策略：
   - 规则匹配优先，未命中走 LLM。
@@ -36,7 +36,7 @@
   - `asr_kws_process` 启用 `asr_fifo/kws_fifo` 输出文本事件。
   - 新增 `asr_ctrl_fifo`，用于 player -> asr_kws 在线/离线模式切换。
 - 播放与恢复：
-  - `player/select.c` 重构 ASR 规则链和恢复策略。
+  - `player/select_loop/select.c` 重构 ASR 规则链和恢复策略。
   - 补齐随机播放规则命中分支。
 - 存储介质：
   - 离线模式设备检测新增 `mmcblk*p*` 自动探测。
@@ -59,12 +59,12 @@
 ## 播放引擎改为 GStreamer
 
 - 播放器使用 **GStreamer**（playbin + alsasink），通过 `./fifo/cmd_fifo` 收命令：`quit`、`cycle pause`、`loadfile 'path'`。
-- **修改**：`player/player.h` 定义 `GST_CMD_FIFO`、`GST_ALSA_DEVICE`；`player/player_gst.c` 实现 `run_gst_player(uri)`（GMainLoop + 总线 EOS/错误 + FIFO 命令）；`player/player.c` 孙进程调用 `run_gst_player`，父进程通过 `player_write_fifo` 写 FIFO；`init.sh` 创建 `cmd_fifo`；`makefile` 链入 `gstreamer-1.0`。
+- **修改**：`player/core/player.h` 定义 `GST_CMD_FIFO`、`GST_ALSA_DEVICE`；`player/core/player_gst.c` 实现 `run_gst_player(uri)`（GMainLoop + 总线 EOS/错误 + FIFO 命令）；`player/core/player.c` 孙进程调用 `run_gst_player`，父进程通过 `player_write_fifo` 写 FIFO；`init.sh` 创建 `cmd_fifo`；`makefile` 链入 `gstreamer-1.0`。
 - **依赖**：`sudo apt-get install -y libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-alsa`。
 
 ## 后续建议
 
 - 将 `player` 与 `voice-assistant` 的路径常量进一步收敛到单一配置层。
 - 将 `SIGUSR1/SIGUSR2` 兼容处理逐步完全下线，仅保留 `SIGCHLD`。
-- 将 `player/select.c` 规则链拆成规则表，进一步降低维护成本。
+- 将 `player/select_loop/select.c` 规则链拆成规则表，进一步降低维护成本。
 

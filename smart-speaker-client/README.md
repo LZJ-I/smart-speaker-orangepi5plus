@@ -8,7 +8,7 @@
 
 ### 仓库结构
 
-- `player/`：播放控制、规则匹配、音乐源后端
+- `player/`：播放控制、规则匹配、音乐源后端（实现分布在 `core/`、`net/`、`select_loop/`、`device/`、`rules/`、`bridge/`、`music_source/`）
 - `player/music_source/`：本地曲库后端、server 曲库后端、统一路由
 - `voice-assistant/`：ASR/KWS/TTS/LLM
 - `supervisor/`：拉起与守护子进程
@@ -63,7 +63,7 @@ MP3 等解码常依赖 `good` / `ugly`。验证方式二选一：`sudo apt insta
 
 **服务端曲库目录**：音频文件若直接放在曲库**根目录**（非 `歌手名/歌曲.mp3` 结构），`list_music` / `search_music` 返回里 **`singer` 可能为空**，属当前扫描逻辑预期。
 
-**扬声器 / ALSA（板载 ES8388）**：`aplay -l` 里 **card 3 `rockchipes8388`** 对应 3.5mm / 板载模拟输出；当前列表里**没有** USB 声卡时，USB 音箱不会被系统识别。`amixer -c 3` 可看 `Headphone`/`Speaker`/`PCM` 是否静音。若 `~/.asoundrc` 里配置了 `pcm.!default` → `dmix`+`hw:3,0`，可用环境变量 **`SMART_SPEAKER_GST_ALSA_DEVICE=default`** 让 `alsasink` 与系统默认一致；默认仍为 `player_constants.h` 里的 `dmix:CARD=rockchipes8388,DEV=0`。**其它进程独占 `hw:3,0`**（例如 `gst-launch` 直连硬件）时，`aplay -D default` 可能出现 `unable to open slave` / `Device or resource busy`，需先结束占用进程再测声。
+**扬声器 / ALSA（板载 ES8388）**：`aplay -l` 里 **card 3 `rockchipes8388`** 对应 3.5mm / 板载模拟输出；当前列表里**没有** USB 声卡时，USB 音箱不会被系统识别。`amixer -c 3` 可看 `Headphone`/`Speaker`/`PCM` 是否静音。若 `~/.asoundrc` 里配置了 `pcm.!default` → `dmix`+`hw:3,0`，可用环境变量 **`SMART_SPEAKER_GST_ALSA_DEVICE=default`** 让 `alsasink` 与系统默认一致；默认仍为 `player/core/player_constants.h` 里的 `dmix:CARD=rockchipes8388,DEV=0`。**其它进程独占 `hw:3,0`**（例如 `gst-launch` 直连硬件）时，`aplay -D default` 可能出现 `unable to open slave` / `Device or resource busy`，需先结束占用进程再测声。
 
 语音链路（ASR/KWS/TTS）另需本仓库 `3rdparty` 与模型，见下文「模型下载」。
 
@@ -108,7 +108,7 @@ make
 
 ## 环境变量（player）
 
-宏名与字符串默认值集中在 `player/player_constants.h`（如 `SERVER_IP`、`SERVER_PORT`、`SERVER_MUSIC_BASE_URL`）。下表为 `player` 进程会读取的**环境变量**：未设置或非空校验失败时，回退到表中「默认值」列（与头文件宏一致；改默认请改宏并重新编译）。
+宏名与字符串默认值集中在 `player/core/player_constants.h`（如 `SERVER_IP`、`SERVER_PORT`、`SERVER_MUSIC_BASE_URL`）。下表为 `player` 进程会读取的**环境变量**：未设置或非空校验失败时，回退到表中「默认值」列（与头文件宏一致；改默认请改宏并重新编译）。
 
 **在线 server 地址**：`player_constants.h` 中默认宏为**本机** `SERVER_IP`=`127.0.0.1`、`SERVER_PORT`=`8888`；HTTP 前缀未单独设环境变量时按当前选用的 IP 拼为 `http://<该 IP>/music/`（与宏一致时为 `http://127.0.0.1/music/`）。**连内网、生产或其它机器上的 server 时，须在你自己的运行环境里设置** `SMART_SPEAKER_SERVER_IP`、`SMART_SPEAKER_SERVER_PORT`（若与默认 `8888` 不同）、以及按需 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL`（须与 HTTP 曲库根 URL 一致）。
 
@@ -218,8 +218,8 @@ make test_online_music_chain
    export SMART_SPEAKER_SERVER_PORT=8888
    export SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://10.102.178.47/music/
    ```
-3. **`player/main.c` 已重新启用 `socket_init()`**：成功则日志有 `TCP 长连成功`；失败则 `TCP 长连失败`（**不会**自动走 `player_switch_offline_mode`，避免无 U 盘时被 TTS/挂载逻辑卡死）。失败时搜歌仍可用 `music_source_server` 的短时连接 + 本地回退。
-4. **看日志**：`player/main.c` 顶部 `LOG_LEVEL`（默认 4）控制 `debug_log.h` 输出；终端跑 `./run` 直接看。关键 TAG：`PLAYER-MAIN`、`SOCKET`、`PLAYER`。可 `grep SOCKET` 或全文检索 `连接服务器`。
+3. **`player/core/main.c` 已重新启用 `socket_init()`**：成功则日志有 `TCP 长连成功`；失败则 `TCP 长连失败`（**不会**自动走 `player_switch_offline_mode`，避免无 U 盘时被 TTS/挂载逻辑卡死）。失败时搜歌仍可用 `music_source_server` 的短时连接 + 本地回退。
+4. **看日志**：`player/core/main.c` 顶部 `LOG_LEVEL`（默认 4）控制 `debug_log.h` 输出；终端跑 `./run` 直接看。关键 TAG：`PLAYER-MAIN`、`SOCKET`、`PLAYER`。可 `grep SOCKET` 或全文检索 `连接服务器`。
 5. **分层排障**：先 `./test_online_music_chain`；再 `curl -I` 打印出的 `url`；最后 `./run`。服务端终端应出现新 TCP 连接；若只有搜歌无长连，检查是否 `socket_init` 报错。
 6. **GDB**（可选）：`gdb --args ./run`，断点示例 `b socket_init`、`b music_source_server_search`。
 
