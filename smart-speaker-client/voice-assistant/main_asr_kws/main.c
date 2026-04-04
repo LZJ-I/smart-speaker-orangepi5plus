@@ -39,6 +39,37 @@ uint32_t g_tts_seq = 0;
 int current_state = STATE_KWS;
 enum OnlineMode g_current_online_mode = ONLINE_MODE_YES;
 
+static void wait_for_tts_wake_done(void)
+{
+    int rfd = open(TTS_WAKE_DONE_FIFO_PATH, O_RDONLY | O_NONBLOCK);
+    struct pollfd pfd;
+    char b = 0;
+    int pr;
+
+    if (rfd < 0) {
+        LOGW(TAG, "打开tts唤醒完成管道失败: %s", strerror(errno));
+        return;
+    }
+
+    pfd.fd = rfd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    pr = poll(&pfd, 1, 5000);
+    if (pr > 0 && (pfd.revents & POLLIN)) {
+        if (read(rfd, &b, 1) != 1) {
+            LOGW(TAG, "读取tts唤醒完成信号失败: %s", strerror(errno));
+        }
+    } else if (pr == 0) {
+        LOGW(TAG, "等待tts唤醒完成超时，继续进入ASR模式");
+    } else if (pr < 0) {
+        LOGW(TAG, "等待tts唤醒完成失败: %s", strerror(errno));
+    } else {
+        LOGW(TAG, "tts唤醒完成管道异常关闭，继续进入ASR模式");
+    }
+
+    close(rfd);
+}
+
 int send_tts_command(IPCCommandType type, const char *text, const char *filename) {
     if (tts_fd == -1) {
         asr_kws_pipe_open(&asr_fd, &kws_fd, &tts_fd, &asr_ctrl_fd);
@@ -246,12 +277,7 @@ int main(int argc, char const *argv[]) {
                 asr_kws_pipe_write_text(&kws_fd, KWS_FIFO_PATH, keyword);
                 send_tts_command(IPC_CMD_STOP_PLAYING, NULL, NULL);
                 send_tts_command(IPC_CMD_PLAY_WAKE_RESPONSE, NULL, NULL);
-                int rfd = open(TTS_WAKE_DONE_FIFO_PATH, O_RDONLY);
-                if (rfd >= 0) {
-                    char b;
-                    read(rfd, &b, 1);
-                    close(rfd);
-                }
+                wait_for_tts_wake_done();
                 clock_gettime(CLOCK_MONOTONIC, &g_last_asr_update_time);
                 memset(g_last_asr_text, 0, sizeof(g_last_asr_text));
                 g_asr_result_updated = 0;
