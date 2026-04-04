@@ -1,5 +1,7 @@
 # smart-speaker-client
 
+![客户端模块（霓虹赛博）](../docs/readme-illustrations/neon-client-focus.svg)
+
 智能音箱客户端，当前拆成 `player`、`voice-assistant`、`supervisor`、`ipc`、`tools`、`assets`、`docs`。
 
 ## 目录

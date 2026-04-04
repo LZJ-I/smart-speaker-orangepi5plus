@@ -1,5 +1,7 @@
 # smart-speaker-orangepi5plus
 
+![架构示意（霓虹赛博）](docs/readme-illustrations/neon-architecture-overview.svg)
+
 基于 OrangePi 5 Plus 的智能音箱项目仓库。主代码与使用说明在 **smart-speaker-client**（嵌入式端）；另有 **smart-speaker-server**（服务端）、**smart-speaker-qtApp**（Qt 客户端），详见各自目录。
 
 - **克隆**：`git clone https://github.com/LZJ-I/smart-speaker-orangepi5plus && cd smart-speaker-orangepi5plus`

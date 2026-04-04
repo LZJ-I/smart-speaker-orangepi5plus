@@ -1,5 +1,7 @@
 # smart-speaker-server
 
+![服务端枢纽（霓虹赛博）](../docs/readme-illustrations/neon-server-focus.svg)
+
 TCP 服务端：设备/APP 转发、账号（MySQL）、本地曲库扫描（与 Apache 静态目录共用磁盘）。
 
 ## 目录
