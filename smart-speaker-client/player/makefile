@@ -1,15 +1,20 @@
 CC = gcc
 CFLAGS = -Wall -g -I/usr/include/json-c $(shell pkg-config --cflags gstreamer-1.0 2>/dev/null)
 
-OBJS = main.o select.o select_text.o select_music_llm.o link.o shm.o socket.o socket_report.o device.o player.o player_fifo.o player_gst.o rule_match.o music_lib_bridge.o ../ipc/ipc_message.o ../voice-assistant/llm/llm.o
-LIBS = -lpthread -ljson-c -lasound -lm -ldl $(shell pkg-config --libs gstreamer-1.0 2>/dev/null)
+OBJS = main.o select.o select_text.o select_music_llm.o link.o shm.o socket.o socket_report.o device.o player.o player_fifo.o player_gst.o rule_match.o music_lib_bridge.o music_source/music_source_local.o music_source/music_source_server.o music_source/music_source_manager.o ../ipc/ipc_message.o ../voice-assistant/llm/llm.o
+LIBS = -lpthread -ljson-c -lasound -lm $(shell pkg-config --libs gstreamer-1.0 2>/dev/null)
 
 # 可执行文件
 TARGET = run
 
 # 默认目标
-.PHONY: all clean
+.PHONY: all clean test_online_music_chain
 all: $(TARGET)
+
+# 仅测 TCP search_music + HTTP URL（与完整 player 无关）
+test_online_music_chain: test_online_music_chain.c music_source/music_source_server.c
+	$(CC) -Wall -g -I. $(shell pkg-config --cflags json-c 2>/dev/null) -o $@ \
+		test_online_music_chain.c music_source/music_source_server.c $(shell pkg-config --libs json-c 2>/dev/null || echo -ljson-c)
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET) $(LIBS)
@@ -30,4 +35,4 @@ $(TARGET): $(OBJS)
 
 # 清理
 clean:
-	rm -f $(TARGET) $(OBJS) testServer
+	rm -f $(TARGET) $(OBJS) testServer test_online_music_chain
