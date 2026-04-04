@@ -18,13 +18,92 @@
 #include <string.h>
 
 #define TAG "DEVICE"
-#define VOLUME_EXP 2.0
+#define DB_PERCENT_SCALE 2000.0
 
 int g_button_fd = -1;   // 按键文件描述符
 BUTTON_STATE state = STATE_IDLE;    // 按键状态
 unsigned long old, new;     // 用于判断长按和短按
 struct itimerval tv;        // 按键定时器结构体
 int g_current_vol = 0;      // 当前音量
+
+static int percent_to_playback_volume(snd_mixer_elem_t *elem, int volume, long *target_vol)
+{
+    long vol_min = 0;
+    long vol_max = 0;
+    long db_min = 0;
+    long db_max = 0;
+
+    if (elem == NULL || target_vol == NULL) return -1;
+    if (snd_mixer_selem_get_playback_volume_range(elem, &vol_min, &vol_max) < 0) {
+        LOGE(TAG, "snd_mixer_selem_get_playback_volume_range error");
+        return -1;
+    }
+    if (vol_max <= vol_min) {
+        *target_vol = vol_min;
+        return 0;
+    }
+    if (volume <= 0) {
+        *target_vol = vol_min;
+        return 0;
+    }
+    if (volume >= 100) {
+        *target_vol = vol_max;
+        return 0;
+    }
+    if (snd_mixer_selem_get_playback_dB_range(elem, &db_min, &db_max) >= 0 && db_max > db_min) {
+        double ratio = volume / 100.0;
+        double target_db = db_max + DB_PERCENT_SCALE * log10(ratio);
+        long target_db_long;
+        if (target_db < db_min) target_db = db_min;
+        if (target_db > db_max) target_db = db_max;
+        target_db_long = (long)llround(target_db);
+        if (snd_mixer_selem_ask_playback_dB_vol(elem, target_db_long, 0, target_vol) >= 0) {
+            return 0;
+        }
+    }
+    *target_vol = (long)llround(vol_min + (vol_max - vol_min) * (volume / 100.0));
+    return 0;
+}
+
+static int playback_volume_to_percent(snd_mixer_elem_t *elem, long current_alsa, int *volume)
+{
+    long vol_min = 0;
+    long vol_max = 0;
+    long current_db = 0;
+    long db_min = 0;
+    long db_max = 0;
+
+    if (elem == NULL || volume == NULL) return -1;
+    if (snd_mixer_selem_get_playback_volume_range(elem, &vol_min, &vol_max) < 0) {
+        return -1;
+    }
+    if (vol_max <= vol_min) {
+        *volume = g_current_vol;
+        return 0;
+    }
+    if (current_alsa <= vol_min) {
+        *volume = 0;
+        return 0;
+    }
+    if (current_alsa >= vol_max) {
+        *volume = 100;
+        return 0;
+    }
+    if (snd_mixer_selem_get_playback_dB_range(elem, &db_min, &db_max) >= 0 &&
+        db_max > db_min &&
+        snd_mixer_selem_ask_playback_vol_dB(elem, current_alsa, &current_db) >= 0) {
+        double ratio = pow(10.0, (current_db - db_max) / DB_PERCENT_SCALE);
+        int mapped = (int)llround(ratio * 100.0);
+        if (mapped < 0) mapped = 0;
+        if (mapped > 100) mapped = 100;
+        *volume = mapped;
+        return 0;
+    }
+    *volume = (int)llround((current_alsa - vol_min) * 100.0 / (double)(vol_max - vol_min));
+    if (*volume < 0) *volume = 0;
+    if (*volume > 100) *volume = 100;
+    return 0;
+}
 
 static int get_mixer_elem(snd_mixer_t** snd_mixer, snd_mixer_elem_t** mixer_elem)
 {
@@ -91,8 +170,6 @@ int device_set_volume(int volume)
 {
     snd_mixer_t* mixer = NULL;
     snd_mixer_elem_t* elem = NULL;
-    long vol_min = 0;  // 音量最小值（ALSA原生范围）
-    long vol_max = 0;  // 音量最大值（ALSA原生范围）
     long target_vol = 0; // 转换后的目标音量（ALSA原生值）
 
     // 输入音量范围检查（0-100）
@@ -105,14 +182,10 @@ int device_set_volume(int volume)
         LOGE(TAG, "device_set_volume error: 获取混音器元素失败");
         return -1;
     }
-    // 获取ALSA原生音量范围
-    if (snd_mixer_selem_get_playback_volume_range(elem, &vol_min, &vol_max) < 0) {
-        LOGE(TAG, "snd_mixer_selem_get_playback_volume_range error");
+    if (percent_to_playback_volume(elem, volume, &target_vol) != 0) {
         snd_mixer_close(mixer);
         return -1;
     }
-    double r = (volume <= 0) ? 0.0 : (volume >= 100) ? 1.0 : pow(volume / 100.0, VOLUME_EXP);
-    target_vol = (long)round(vol_min + (vol_max - vol_min) * r);
     // 设置所有声道音量（保证立体声平衡）
     if (snd_mixer_selem_set_playback_volume_all(elem, target_vol) < 0) {
         LOGE(TAG, "snd_mixer_selem_set_playback_volume_all error");
@@ -130,28 +203,18 @@ int device_get_volume(int *volume)
 {
     snd_mixer_t *mixer = NULL;
     snd_mixer_elem_t *elem = NULL;
-    long vol_min = 0, vol_max = 0, current_alsa = 0;
+    long current_alsa = 0;
     if (get_mixer_elem(&mixer, &elem) != 0)
         return -1;
-    if (snd_mixer_selem_get_playback_volume_range(elem, &vol_min, &vol_max) < 0) {
-        snd_mixer_close(mixer);
-        return -1;
-    }
     if (snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &current_alsa) < 0) {
         snd_mixer_close(mixer);
         return -1;
     }
-    snd_mixer_close(mixer);
-    if (vol_max <= vol_min) {
-        *volume = g_current_vol;
-        return 0;
+    if (playback_volume_to_percent(elem, current_alsa, volume) != 0) {
+        snd_mixer_close(mixer);
+        return -1;
     }
-    double linear = (current_alsa - vol_min) / (double)(vol_max - vol_min);
-    if (linear <= 0) *volume = 0;
-    else if (linear >= 1) *volume = 100;
-    else *volume = (int)round(100.0 * pow(linear, 1.0 / VOLUME_EXP));
-    if (*volume < 0) *volume = 0;
-    if (*volume > 100) *volume = 100;
+    snd_mixer_close(mixer);
     g_current_vol = *volume;
     return 0;
 }
