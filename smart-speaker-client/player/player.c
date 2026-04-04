@@ -496,11 +496,17 @@ int player_playlist_load_next_page(void)
     int filled_count = 0;
     int next_page;
     int tries = 0;
-    if (g_playlist_ctx.keyword[0] == '\0') return -1;
+    const char *search_kw;
+    if (g_current_online_mode == ONLINE_MODE_YES) {
+        search_kw = "";
+    } else {
+        if (g_playlist_ctx.keyword[0] == '\0') return -1;
+        search_kw = g_playlist_ctx.keyword;
+    }
     next_page = g_playlist_ctx.current_page + 1;
     if (g_playlist_ctx.total_pages > 0 && next_page > g_playlist_ctx.total_pages) next_page = 1;
     while (tries < (g_playlist_ctx.total_pages > 0 ? g_playlist_ctx.total_pages : 3)) {
-        if (music_lib_search_fill_list_page(g_playlist_ctx.keyword, next_page, g_playlist_ctx.page_size,
+        if (music_lib_search_fill_list_page(search_kw, next_page, g_playlist_ctx.page_size,
                                             &total_pages, &filled_count) == 0 &&
             filled_count > 0) {
             Music_Node first_song;
@@ -513,8 +519,8 @@ int player_playlist_load_next_page(void)
                 update_shm_current_song(&s, &first_song);
                 shm_set(&s);
             }
-            LOGI(TAG, "翻页成功 keyword=%s page=%d/%d count=%d",
-                 g_playlist_ctx.keyword, g_playlist_ctx.current_page, g_playlist_ctx.total_pages, filled_count);
+            LOGI(TAG, "翻页成功 page=%d/%d count=%d",
+                 g_playlist_ctx.current_page, g_playlist_ctx.total_pages, filled_count);
             return filled_count;
         }
         next_page++;
