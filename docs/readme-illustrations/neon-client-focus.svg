@@ -1,54 +1,69 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="440" viewBox="0 0 920 440" role="img" aria-labelledby="ncf-t ncf-d">
-  <title id="ncf-t">smart-speaker-client module map</title>
-  <desc id="ncf-d">Neon cyber client focus</desc>
+  <title id="ncf-t">smart-speaker-client</title>
+  <desc id="ncf-d">Front-view bookshelf speaker</desc>
   <defs>
     <linearGradient id="ncf-sky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#0f0520"/>
       <stop offset="100%" stop-color="#1a0a2e"/>
     </linearGradient>
-    <filter id="ncf-g1" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="4" result="b"/>
+    <linearGradient id="ncf-cab" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgba(34,211,238,0.14)"/>
+      <stop offset="50%" stop-color="rgba(34,211,238,0.05)"/>
+      <stop offset="100%" stop-color="rgba(34,211,238,0.12)"/>
+    </linearGradient>
+    <radialGradient id="ncf-cone" cx="45%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="rgba(165,243,252,0.2)"/>
+      <stop offset="55%" stop-color="rgba(34,211,238,0.1)"/>
+      <stop offset="100%" stop-color="rgba(8,47,73,0.35)"/>
+    </radialGradient>
+    <filter id="ncf-title" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="ncf-g2" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="7" result="b2"/>
-      <feMerge><feMergeNode in="b2"/><feMergeNode in="SourceGraphic"/></feMerge>
+    <filter id="ncf-edge" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
   <rect width="920" height="440" fill="url(#ncf-sky)"/>
-  <g stroke="#22d3ee" stroke-width="1" opacity="0.12">
-    <line x1="0" y1="100" x2="920" y2="100"/><line x1="0" y1="200" x2="920" y2="200"/>
-    <line x1="0" y1="300" x2="920" y2="300"/>
+  <g stroke="#22d3ee" stroke-width="1" opacity="0.08">
+    <line x1="0" y1="110" x2="920" y2="110"/><line x1="0" y1="220" x2="920" y2="220"/><line x1="0" y1="330" x2="920" y2="330"/>
   </g>
-  <text x="460" y="42" text-anchor="middle" fill="#67e8f9" font-family="ui-monospace, monospace" font-size="15" filter="url(#ncf-g1)">smart-speaker-client</text>
-  <g transform="translate(48,72)" filter="url(#ncf-g2)">
-    <rect width="420" height="300" rx="12" fill="rgba(34,211,238,0.04)" stroke="#22d3ee" stroke-width="2.5"/>
-    <text x="210" y="36" text-anchor="middle" fill="#67e8f9" font-family="monospace" font-size="13">EMBEDDED CLIENT</text>
-    <line x1="40" y1="58" x2="380" y2="58" stroke="#22d3ee" stroke-width="1" opacity="0.35"/>
-    <text x="50" y="92" fill="#a5f3fc" font-family="monospace" font-size="11">player / GStreamer</text>
-    <text x="50" y="118" fill="#a5f3fc" font-family="monospace" font-size="11">music_source: local + server</text>
-    <text x="50" y="154" fill="#a5f3fc" font-family="monospace" font-size="11">voice-assistant: ASR KWS TTS LLM</text>
-    <text x="50" y="180" fill="#a5f3fc" font-family="monospace" font-size="11">supervisor + ipc</text>
-    <circle cx="210" cy="248" r="40" fill="none" stroke="#22d3ee" stroke-width="1.5"/>
-    <text x="210" y="254" text-anchor="middle" fill="#22d3ee" font-family="monospace" font-size="10">OrangePi</text>
+  <text x="460" y="50" text-anchor="middle" fill="#67e8f9" font-family="ui-monospace, monospace" font-size="20" filter="url(#ncf-title)">smart-speaker-client</text>
+  <!-- centered cabinet: front baffle + drivers -->
+  <g transform="translate(290,36)">
+    <rect x="0" y="0" width="340" height="372" rx="20" fill="url(#ncf-cab)" stroke="#22d3ee" stroke-width="2.6" filter="url(#ncf-edge)"/>
+    <rect x="0" y="0" width="340" height="372" rx="20" fill="none" stroke="#67e8f9" stroke-width="1.1" opacity="0.45"/>
+    <rect x="24" y="28" width="292" height="286" rx="10" fill="rgba(8,20,35,0.25)" stroke="#5eead4" stroke-width="1.3" opacity="0.9"/>
+    <g stroke="#22d3ee" stroke-width="1" opacity="0.35" fill="none">
+      <circle cx="52" cy="52" r="3"/><circle cx="288" cy="52" r="3"/><circle cx="52" cy="290" r="3"/><circle cx="288" cy="290" r="3"/>
+    </g>
+    <!-- tweeter dome -->
+    <g transform="translate(170,88)">
+      <circle r="20" fill="none" stroke="#22d3ee" stroke-width="2.2"/>
+      <circle r="14" fill="rgba(103,232,249,0.12)" stroke="#67e8f9" stroke-width="1.2"/>
+      <path d="M -10 -6 Q 0 -14 10 -6" fill="none" stroke="#a5f3fc" stroke-width="1.4" stroke-linecap="round"/>
+      <circle r="5" fill="rgba(165,243,252,0.35)" stroke="#ecfeff" stroke-width="0.8"/>
+    </g>
+    <!-- woofer: surround ring + cone + ribs + dust cap -->
+    <g transform="translate(170,218)">
+      <circle r="92" fill="none" stroke="#22d3ee" stroke-width="3" opacity="0.9"/>
+      <circle r="78" fill="url(#ncf-cone)" stroke="#06b6d4" stroke-width="1.2" opacity="0.95"/>
+      <g stroke="#22d3ee" stroke-width="1.1" stroke-linecap="round" opacity="0.45">
+        <line x1="0" y1="-24" x2="0" y2="-64"/><line x1="17" y1="-17" x2="45.3" y2="-45.3"/>
+        <line x1="24" y1="0" x2="64" y2="0"/><line x1="17" y1="17" x2="45.3" y2="45.3"/>
+        <line x1="0" y1="24" x2="0" y2="64"/><line x1="-17" y1="17" x2="-45.3" y2="45.3"/>
+        <line x1="-24" y1="0" x2="-64" y2="0"/><line x1="-17" y1="-17" x2="-45.3" y2="-45.3"/>
+      </g>
+      <circle r="22" fill="rgba(15,30,50,0.5)" stroke="#a5f3fc" stroke-width="1.4"/>
+      <circle r="10" fill="rgba(236,254,255,0.15)" stroke="#cffafe" stroke-width="0.8"/>
+    </g>
+    <!-- bass-reflex port -->
+    <rect x="118" y="308" width="104" height="22" rx="11" fill="rgba(6,20,40,0.55)" stroke="#22d3ee" stroke-width="1.4"/>
+    <ellipse cx="170" cy="319" rx="38" ry="7" fill="none" stroke="#67e8f9" stroke-width="0.8" opacity="0.4"/>
+    <!-- plinth -->
+    <rect x="12" y="358" width="316" height="14" rx="5" fill="rgba(34,211,238,0.08)" stroke="#22d3ee" stroke-width="1.2"/>
+    <rect x="48" y="374" width="44" height="6" rx="2" fill="#22d3ee" opacity="0.35"/>
+    <rect x="248" y="374" width="44" height="6" rx="2" fill="#22d3ee" opacity="0.35"/>
   </g>
-  <g transform="translate(500,100)" filter="url(#ncf-g2)">
-    <rect width="200" height="220" rx="8" fill="none" stroke="#f472b6" stroke-width="2"/>
-    <line x1="24" y1="48" x2="176" y2="48" stroke="#f472b6" stroke-width="1.1"/>
-    <line x1="24" y1="78" x2="176" y2="78" stroke="#f472b6" stroke-width="1.1"/>
-    <text x="100" y="200" text-anchor="middle" fill="#f9a8d4" font-family="monospace" font-size="11">SERVER</text>
-    <text x="100" y="218" text-anchor="middle" fill="#f472b6" font-family="monospace" font-size="9">TCP + library</text>
-  </g>
-  <g transform="translate(718,148)" filter="url(#ncf-g2)">
-    <rect width="154" height="124" rx="14" fill="none" stroke="#a78bfa" stroke-width="2"/>
-    <text x="77" y="108" text-anchor="middle" fill="#c4b5fd" font-family="monospace" font-size="10">QT APP</text>
-  </g>
-  <g stroke="#22d3ee" stroke-width="2.2" fill="none" filter="url(#ncf-g1)">
-    <path d="M468 222 H500"/>
-  </g>
-  <g stroke="#a78bfa" stroke-width="1.8" fill="none" opacity="0.9" filter="url(#ncf-g1)">
-    <path d="M718 210 H700 Q 640 210 600 222"/>
-  </g>
-  <path d="M795 148 C 840 80 880 40 400 40 C 120 40 80 120 210 72" fill="none" stroke="#f472b6" stroke-width="1.3" stroke-dasharray="9 6" opacity="0.75" filter="url(#ncf-g1)"/>
-  <text x="460" y="418" text-anchor="middle" fill="#6b21a8" font-family="monospace" font-size="10">neon / client focus</text>
 </svg>
