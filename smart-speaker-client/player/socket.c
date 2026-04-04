@@ -7,8 +7,10 @@
 #include <sys/wait.h>
 #include <pthread.h>
 #include <sys/select.h>
+#include <fcntl.h>
 #include <string.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <json-c/json.h>
 
 #include "../debug_log.h"
@@ -26,9 +28,71 @@
 int g_socket_fd = -1;       // socket文件描述符
 pthread_t g_report_tid;     // 定时上报数据线程的线程id
 
+static int socket_connect_with_timeout(int fd, const struct sockaddr_in *server_info, int timeout_ms)
+{
+    int flags;
+    int ret;
+    int so_error = 0;
+    socklen_t so_error_len = sizeof(so_error);
+    fd_set wfds;
+    struct timeval tv;
+
+    flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) return -1;
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) return -1;
+
+    ret = connect(fd, (const struct sockaddr *)server_info, sizeof(*server_info));
+    if (ret != 0 && errno != EINPROGRESS) {
+        (void)fcntl(fd, F_SETFL, flags);
+        return -1;
+    }
+    if (ret != 0) {
+        FD_ZERO(&wfds);
+        FD_SET(fd, &wfds);
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        ret = select(fd + 1, NULL, &wfds, NULL, &tv);
+        if (ret <= 0 ||
+            getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &so_error_len) != 0 ||
+            so_error != 0) {
+            (void)fcntl(fd, F_SETFL, flags);
+            errno = (so_error != 0) ? so_error : ETIMEDOUT;
+            return -1;
+        }
+    }
+    if (fcntl(fd, F_SETFL, flags) != 0) return -1;
+    return 0;
+}
+
+static const char *socket_server_ip(void)
+{
+    const char *value = getenv(SERVER_IP_ENV);
+    if (value != NULL && value[0] != '\0') {
+        return value;
+    }
+    return SERVER_IP;
+}
+
+static int socket_server_port(void)
+{
+    const char *value = getenv(SERVER_PORT_ENV);
+    char *end = NULL;
+    long port;
+    if (value == NULL || value[0] == '\0') {
+        return SERVER_PORT;
+    }
+    port = strtol(value, &end, 10);
+    if (end == value || *end != '\0' || port <= 0 || port > 65535) {
+        return SERVER_PORT;
+    }
+    return (int)port;
+}
+
 // 初始化socket连接
 int socket_init()
 {
+    const char *server_ip = socket_server_ip();
+    int server_port = socket_server_port();
     // 创建套接字
     g_socket_fd = socket(AF_INET, SOCK_STREAM, 0);  // ipv4 tcp 
     if(-1 == g_socket_fd)
@@ -40,22 +104,23 @@ int socket_init()
     // 设置服务器地址
     struct sockaddr_in server_info = {0};
     server_info.sin_family = AF_INET;
-    server_info.sin_port = htons(PORT);
-    server_info.sin_addr.s_addr = inet_addr(IP);
+    server_info.sin_port = htons(server_port);
+    server_info.sin_addr.s_addr = inet_addr(server_ip);
 
     // 连接套接字
     int ret = 0;
-    int count = 20;  // 尝试连接20次
+    int count = 2;
     while(count-- > 0)
     {
-        ret = connect(g_socket_fd, (struct sockaddr *)&server_info, sizeof(server_info));
+        ret = socket_connect_with_timeout(g_socket_fd, &server_info, 1000);
         if(-1 == ret)
         {
-            LOGE(TAG, "连接服务器失败: %s (剩余尝试次数: %d)", strerror(errno), count);
-            sleep(1);
+            LOGE(TAG, "连接服务器失败: %s %s:%d (剩余尝试次数: %d)",
+                 strerror(errno), server_ip, server_port, count);
+            usleep(200 * 1000);
             continue;
         }
-        LOGI(TAG, "连接服务器成功");
+        LOGI(TAG, "连接服务器成功: %s:%d", server_ip, server_port);
         
         // 把服务器套接字加入到select中
         FD_SET(g_socket_fd, &READSET);
@@ -69,8 +134,9 @@ int socket_init()
         }
         LOGI(TAG, "创建上报线程成功!");
 
-        // 设置为在线模式
-        g_current_online_mode = ONLINE_MODE_YES;    // 在线模式
+        if (!player_env_forces_offline()) {
+            g_current_online_mode = ONLINE_MODE_YES;
+        }
 
         return 0;
     }
