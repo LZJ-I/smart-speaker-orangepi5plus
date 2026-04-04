@@ -10,7 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <json-c/json.h>
-#include "../debug_log.h"
+#include "debug_log.h"
 
 #define TAG "SOCKET"
 

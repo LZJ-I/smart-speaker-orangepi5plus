@@ -19,9 +19,9 @@
 #include "link.h"
 #include "select.h"
 #include "music_lib_bridge.h"
-#include "music_source/music_source.h"
+#include "music_source.h"
 #include "socket.h"
-#include "../debug_log.h"
+#include "debug_log.h"
 
 #define TAG "PLAYER"
 

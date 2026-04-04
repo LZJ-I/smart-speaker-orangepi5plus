@@ -3,8 +3,8 @@
 #include "select_text.h"
 #include "player.h"
 #include "select.h"
-#include "../debug_log.h"
-#include "../voice-assistant/llm/llm.h"
+#include "debug_log.h"
+#include "voice-assistant/llm/llm.h"
 
 #define TAG "SELECT"
 

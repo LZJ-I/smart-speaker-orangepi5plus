@@ -8,7 +8,7 @@
 #include <strings.h>
 #include <sys/stat.h>
 
-#include "../player_constants.h"
+#include "player_constants.h"
 
 typedef struct {
     MusicSourceItem *items;

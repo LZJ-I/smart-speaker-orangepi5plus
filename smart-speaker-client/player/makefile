@@ -1,26 +1,51 @@
 CC = gcc
-CFLAGS = -Wall -g -I/usr/include/json-c $(shell pkg-config --cflags gstreamer-1.0 2>/dev/null)
+P := .
+CFLAGS = -Wall -g -I/usr/include/json-c $(shell pkg-config --cflags gstreamer-1.0 2>/dev/null) \
+	-I$(P)/.. \
+	-I$(P)/core \
+	-I$(P)/net \
+	-I$(P)/select_loop \
+	-I$(P)/device \
+	-I$(P)/rules \
+	-I$(P)/bridge \
+	-I$(P)/music_source
 
-OBJS = main.o select.o select_text.o select_music_llm.o link.o shm.o socket.o socket_report.o device.o player.o player_fifo.o player_gst.o rule_match.o music_lib_bridge.o music_source/music_source_local.o music_source/music_source_server.o music_source/music_source_manager.o ../ipc/ipc_message.o ../voice-assistant/llm/llm.o
+OBJS = \
+	core/main.o \
+	select_loop/select.o \
+	select_loop/select_text.o \
+	select_loop/select_music_llm.o \
+	net/link.o \
+	core/shm.o \
+	net/socket.o \
+	net/socket_report.o \
+	device/device.o \
+	core/player.o \
+	core/player_fifo.o \
+	core/player_gst.o \
+	rules/rule_match.o \
+	bridge/music_lib_bridge.o \
+	music_source/music_source_local.o \
+	music_source/music_source_server.o \
+	music_source/music_source_manager.o \
+	../ipc/ipc_message.o \
+	../voice-assistant/llm/llm.o
 LIBS = -lpthread -ljson-c -lasound -lm $(shell pkg-config --libs gstreamer-1.0 2>/dev/null)
 
-# 可执行文件
 TARGET = run
 
-# 默认目标
 .PHONY: all clean test_online_music_chain
 all: $(TARGET)
 
-# 仅测 TCP search_music + HTTP URL（与完整 player 无关）
+TEST_CFLAGS = -Wall -g -I$(P)/.. -I$(P)/core -I$(P)/net -I$(P)/music_source $(shell pkg-config --cflags json-c 2>/dev/null)
 test_online_music_chain: test_online_music_chain.c music_source/music_source_server.c
-	$(CC) -Wall -g -I. $(shell pkg-config --cflags json-c 2>/dev/null) -o $@ \
+	$(CC) $(TEST_CFLAGS) -o $@ \
 		test_online_music_chain.c music_source/music_source_server.c $(shell pkg-config --libs json-c 2>/dev/null || echo -ljson-c)
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET) $(LIBS)
 	rm -f $(OBJS)
 
-# 模式规则
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -33,6 +58,5 @@ $(TARGET): $(OBJS)
 ../voice-assistant/llm/llm.o: ../voice-assistant/llm/llm.c
 	$(CC) $(CFLAGS) -c ../voice-assistant/llm/llm.c -o ../voice-assistant/llm/llm.o
 
-# 清理
 clean:
 	rm -f $(TARGET) $(OBJS) testServer test_online_music_chain

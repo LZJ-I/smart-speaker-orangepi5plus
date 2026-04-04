@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include "player.h"
 #include "select.h"
-#include "../debug_log.h"
+#include "debug_log.h"
 
 #define TAG "PLAYER"
 

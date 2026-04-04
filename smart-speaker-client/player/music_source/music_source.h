@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-#include "../link.h"
+#include "link.h"
 
 typedef struct {
     char source[MUSIC_SOURCE_MAX];

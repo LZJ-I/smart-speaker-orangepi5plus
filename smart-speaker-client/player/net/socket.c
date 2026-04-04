@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <json-c/json.h>
 
-#include "../debug_log.h"
+#include "debug_log.h"
 #include "select.h"
 #include "socket.h"
 #include "shm.h"

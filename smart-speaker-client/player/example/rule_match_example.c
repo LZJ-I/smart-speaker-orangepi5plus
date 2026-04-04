@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-#include "../rule_match.h"
+#include "rule_match.h"
 
 int main(void)
 {

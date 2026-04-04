@@ -2,11 +2,11 @@
 
 #include <string.h>
 
-#include "../debug_log.h"
+#include "debug_log.h"
 #include "link.h"
 #include "player.h"
-#include "music_source/music_source.h"
-#include "music_source/music_source_manager.h"
+#include "music_source.h"
+#include "music_source_manager.h"
 
 #define TAG "MUSIC-LIB"
 

@@ -10,10 +10,10 @@
 #include "device.h"
 #include <json-c/json.h>
 #include <signal.h>
-#include "../debug_log.h"
-#include "../ipc/ipc_message.h"
-#include "../voice-assistant/common/ipc_protocol.h"
-#include "../voice-assistant/llm/llm.h"
+#include "debug_log.h"
+#include "ipc/ipc_message.h"
+#include "voice-assistant/common/ipc_protocol.h"
+#include "voice-assistant/llm/llm.h"
 #include "rule_match.h"
 #include "music_lib_bridge.h"
 #include "select_text.h"

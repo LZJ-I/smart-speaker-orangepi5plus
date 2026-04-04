@@ -1,5 +1,5 @@
 #define LOG_LEVEL 4
-#include "../debug_log.h"
+#include "debug_log.h"
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>

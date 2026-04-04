@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #include "player.h"
-#include "../debug_log.h"
+#include "debug_log.h"
 
 #define TAG "GST"
 #define FIFO_LINE_MAX 4096

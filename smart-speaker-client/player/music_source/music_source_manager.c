@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../player.h"
+#include "player.h"
 
 static const MusicSourceBackend *select_backend_by_source(const char *source)
 {

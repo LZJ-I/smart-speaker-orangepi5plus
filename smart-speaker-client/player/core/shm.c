@@ -1,5 +1,5 @@
 #define LOG_LEVEL 4
-#include "../debug_log.h"
+#include "debug_log.h"
 #include "shm.h"
 
 #include <sys/ipc.h>

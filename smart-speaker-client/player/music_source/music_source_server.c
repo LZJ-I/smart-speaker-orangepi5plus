@@ -13,7 +13,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include "../player_constants.h"
+#include "player_constants.h"
 
 static void server_result_reset(MusicSourceResult *result)
 {

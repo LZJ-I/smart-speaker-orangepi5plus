@@ -1,5 +1,5 @@
 #define LOG_LEVEL 4
-#include "../debug_log.h"
+#include "debug_log.h"
 #include <math.h>
 #include <assert.h>
 #include <stdio.h>
