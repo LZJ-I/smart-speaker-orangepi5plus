@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <chrono>
 #include <cstdarg>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -19,6 +20,7 @@
 #include <strings.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -387,16 +389,24 @@ void Server::listen(const char *ip, int port)
     server_info.sin_port = htons(port);
     int socketlen = sizeof(server_info);
 
-    struct evconnlistener *listener = evconnlistener_new_bind(
-        m_eventbase, listener_cb, this, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, 5,
-        (struct sockaddr *)&server_info, socketlen);
-    if (listener == NULL) {
-        perror("evconnlistener_new_bind");
-        return;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        struct evconnlistener *listener = evconnlistener_new_bind(
+            m_eventbase, listener_cb, this, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, 5,
+            (struct sockaddr *)&server_info, socketlen);
+        if (listener != NULL) {
+            event_base_dispatch(m_eventbase);
+            evconnlistener_free(listener);
+            return;
+        }
+        if (errno != EADDRINUSE || attempt > 0) {
+            perror("evconnlistener_new_bind");
+            return;
+        }
+        char cmd[96];
+        snprintf(cmd, sizeof(cmd), "fuser -k %d/tcp >/dev/null 2>&1", port);
+        (void)system(cmd);
+        usleep(200000);
     }
-
-    event_base_dispatch(m_eventbase);
-    evconnlistener_free(listener);
 }
 
 void Server::listener_cb(struct evconnlistener *l, evutil_socket_t fd, struct sockaddr *c, int socklen, void *arg)
