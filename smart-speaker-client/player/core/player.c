@@ -122,6 +122,9 @@ static void stop_active_grandchild(int force_kill)
 {
     Shm_Data s;
     shm_get(&s);
+    if (pid_is_alive(s.grand_pid)) {
+        (void)kill(s.grand_pid, SIGCONT);
+    }
     (void)player_write_fifo("quit\n");
     usleep(150 * 1000);
     if (pid_is_alive(s.grand_pid)) {
@@ -144,6 +147,7 @@ static int request_active_grandchild_quit(int timeout_ms)
         return -1;
     }
 
+    (void)kill(s.grand_pid, SIGCONT);
     (void)player_write_fifo("quit\n");
     while (pid_is_alive(s.grand_pid) && elapsed < timeout_ms) {
         usleep(50 * 1000);
