@@ -73,7 +73,6 @@ void handle_ipc_message(uint16_t type, const uint8_t *body, uint32_t body_len) {
             tts_playback_notify_player("tts:start");
             tts_playback_play_wav_file(path);
             free(path);
-            tts_playback_join();
             break;
         }
 

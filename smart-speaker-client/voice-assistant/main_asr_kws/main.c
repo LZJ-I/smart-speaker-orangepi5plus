@@ -54,7 +54,7 @@ static void wait_for_tts_wake_done(void)
     pfd.fd = rfd;
     pfd.events = POLLIN;
     pfd.revents = 0;
-    pr = poll(&pfd, 1, 5000);
+    pr = poll(&pfd, 1, 15000);
     if (pr > 0 && (pfd.revents & POLLIN)) {
         if (read(rfd, &b, 1) != 1) {
             LOGW(TAG, "读取tts唤醒完成信号失败: %s", strerror(errno));
