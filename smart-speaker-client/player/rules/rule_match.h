@@ -16,7 +16,7 @@ typedef enum {
     RULE_CMD_PLAY_QUERY,         // 按文本搜歌播放
     RULE_CMD_SWITCH_OFFLINE,     // 切换到离线模式
     RULE_CMD_SWITCH_ONLINE,      // 切换到在线模式
-    RULE_CMD_NOOP                // 无指令闲聊（如没事），不响应
+    RULE_CMD_NOOP                // 无指令闲聊（如没事），播随机告别 wav
 } rule_cmd_t;
 
 typedef struct {

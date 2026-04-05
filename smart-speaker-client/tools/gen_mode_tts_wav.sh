@@ -17,4 +17,7 @@ cd voice-assistant/tts/example || exit 1
 ./tts_test -t "服务器断开，已进入离线模式" -o "$ROOT/assets/tts/server_disconnect_offline.wav"
 ./tts_test -t "连接服务器失败，离线模式" -o "$ROOT/assets/tts/server_connect_failed.wav"
 ./tts_test -t "已切换到在线模式" -o "$ROOT/assets/tts/mode_online.wav"
-echo "已生成 assets/tts/mode_order.wav、assets/tts/mode_single.wav、assets/tts/fallback_unmatched.wav、assets/tts/online_music_unsupported.wav、assets/tts/server_disconnect_offline.wav、assets/tts/server_connect_failed.wav、assets/tts/mode_online.wav"
+./tts_test -t "有事情再叫我哦。" -o "$ROOT/assets/tts/noop_reply_recall.wav"
+./tts_test -t "那我先退下了。" -o "$ROOT/assets/tts/noop_reply_leave.wav"
+./tts_test -t "好的。" -o "$ROOT/assets/tts/noop_reply_ok.wav"
+echo "已生成 assets/tts 下模式/兜底/NOOP 等预合成 wav（见 player/README.md）"

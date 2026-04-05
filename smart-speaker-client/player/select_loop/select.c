@@ -1,7 +1,6 @@
 #include "select.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include <time.h>
 #include <errno.h> 
 #include <string.h>
 #include "player.h"
@@ -11,6 +10,7 @@
 #include "device.h"
 #include <json-c/json.h>
 #include <signal.h>
+#include <time.h>
 #include "debug_log.h"
 #include "ipc/ipc_message.h"
 #include "voice-assistant/common/ipc_protocol.h"
@@ -29,6 +29,23 @@ static uint32_t g_tts_seq = 0;
 static const char *FALLBACK_WAV_PATH = "./assets/tts/fallback_unmatched.wav";
 static const char *MODE_ORDER_WAV_PATH = "./assets/tts/mode_order.wav";
 static const char *MODE_SINGLE_WAV_PATH = "./assets/tts/mode_single.wav";
+
+static void tts_play_noop_reply_random(void)
+{
+    static int seeded;
+    static const char *const paths[] = {
+        NOOP_REPLY_RECALL_WAV,
+        NOOP_REPLY_LEAVE_WAV,
+        NOOP_REPLY_OK_WAV,
+    };
+    if (!seeded) {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        srand((unsigned)(ts.tv_sec ^ ts.tv_nsec ^ (unsigned)getpid()));
+        seeded = 1;
+    }
+    tts_play_audio_file(paths[rand() % 3]);
+}
 
 void select_on_player_stopped(void)
 {
@@ -284,23 +301,10 @@ static void select_read_asr(void)
     case RULE_CMD_SWITCH_ONLINE:
         player_switch_online_mode();
         break;
-    case RULE_CMD_NOOP: {
-        static int noop_srand_done;
-        static const char *const noop_replies[] = {
-            "有事情再叫我哦。",
-            "那我先退下了。",
-            "好的。",
-        };
-        int idx;
-        if (!noop_srand_done) {
-            srand((unsigned)time(NULL));
-            noop_srand_done = 1;
-        }
-        idx = rand() % (int)(sizeof(noop_replies) / sizeof(noop_replies[0]));
-        tts_play_text((char *)noop_replies[idx]);
+    case RULE_CMD_NOOP:
+        tts_play_noop_reply_random();
         resume_after_handle = had_music_before_wakeup;
         break;
-    }
     case RULE_CMD_NONE:
     default:
         if (g_current_online_mode == ONLINE_MODE_NO) {

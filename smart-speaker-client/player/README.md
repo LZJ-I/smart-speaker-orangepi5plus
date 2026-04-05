@@ -37,6 +37,23 @@ make -C player
 
 用于清理指定 SysV 共享内存/信号量键，并在 `../fifo`（相对 `player` 目录）及 `/tmp` 下创建 ASR/KWS/TTS/控制等命名管道。详细路径见 `init.sh` 与 `core/player_constants.h`。
 
+## 预生成 TTS 提示音（`assets/tts/*.wav`）
+
+播放器会**直接播文件**（经 TTS 进程 `IPC_CMD_PLAY_AUDIO_FILE`），不经过在线合成。以下路径相对 **`smart-speaker-client` 工程根目录**：
+
+- 模式/连接/兜底：`mode_order.wav`、`mode_single.wav`、`mode_online.wav`、`fallback_unmatched.wav`、`online_music_unsupported.wav`、`server_disconnect_offline.wav`、`server_connect_failed.wav`
+- 无指令忽略（`RULE_CMD_NOOP`）：`noop_reply_recall.wav`、`noop_reply_leave.wav`、`noop_reply_ok.wav`（运行时随机选一条）
+
+**依赖**：与本仓库 `voice-assistant/tts` 一致，需已下载/放置 Sherpa-ONNX TTS 模型；编译好的 `voice-assistant/tts/example/tts_test`；运行时可加载 `3rdparty/sherpa-onnx/.../lib`（脚本里已设置 `LD_LIBRARY_PATH`）。
+
+**生成**：在工程根目录执行：
+
+```bash
+./tools/gen_mode_tts_wav.sh
+```
+
+会调用 `tts_test` 批量写出上述 wav。若缺少模型或库，请先按 `voice-assistant/tts/example/README.md` 准备环境后再执行。
+
 ## 辅助目标
 
 - `make -C player test_online_music_chain`：仅测在线搜歌 TCP + HTTP URL 链（小工具，不依赖完整 `run`）。

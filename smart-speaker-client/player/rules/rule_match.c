@@ -267,7 +267,7 @@ static int match_play_query(const char *text)
 }
 
 static const rule_def_t k_rules[] = {
-    {RULE_CMD_NOOP, "无指令忽略", match_noop_dismiss},
+    {RULE_CMD_NOOP, "无指令告别（随机短 wav）", match_noop_dismiss},
     {RULE_CMD_SWITCH_ONLINE, "切换到在线模式", match_switch_online},
     {RULE_CMD_SWITCH_OFFLINE, "切换到离线模式", match_switch_offline},
     {RULE_CMD_STOP, "停止播放", match_stop},

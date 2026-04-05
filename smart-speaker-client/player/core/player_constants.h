@@ -33,5 +33,8 @@
 #define SERVER_DISCONNECT_OFFLINE_WAV "./assets/tts/server_disconnect_offline.wav"
 #define SERVER_CONNECT_FAILED_WAV "./assets/tts/server_connect_failed.wav"
 #define MODE_ONLINE_WAV "./assets/tts/mode_online.wav"
+#define NOOP_REPLY_RECALL_WAV "./assets/tts/noop_reply_recall.wav"
+#define NOOP_REPLY_LEAVE_WAV "./assets/tts/noop_reply_leave.wav"
+#define NOOP_REPLY_OK_WAV "./assets/tts/noop_reply_ok.wav"
 
 #endif
