@@ -59,7 +59,8 @@ int music_lib_search_fill_list_page(const char *keyword, int page, int page_size
         if (link_add_music_lib(result.items[i].source,
                                result.items[i].song_id,
                                result.items[i].singer,
-                               result.items[i].song_name) != 0) {
+                               result.items[i].song_name,
+                               (result.items[i].play_url[0] != '\0') ? result.items[i].play_url : NULL) != 0) {
             music_source_free_result(&result);
             return -1;
         }
@@ -138,7 +139,8 @@ int music_lib_load_all_local_to_link(void)
             if (link_add_music_lib(result.items[i].source,
                                    result.items[i].song_id,
                                    result.items[i].singer,
-                                   result.items[i].song_name) != 0) {
+                                   result.items[i].song_name,
+                                   (result.items[i].play_url[0] != '\0') ? result.items[i].play_url : NULL) != 0) {
                 music_source_free_result(&result);
                 return -1;
             }

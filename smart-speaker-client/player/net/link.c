@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <time.h>
 #include <unistd.h>
+#include "music_source.h"
+#include "music_source_server.h"
 #include "player.h"
 #include "shm.h"
 
@@ -141,9 +143,11 @@ int link_insert_node_after(Music_Node *anchor, const char *source, const char *i
     return 0;
 }
 
-int link_add_music_lib(const char *source, const char *id, const char *artist, const char *name)
+int link_add_music_lib(const char *source, const char *id, const char *artist, const char *name,
+                       const char *play_url)
 {
     Music_Node *tail;
+    const char *pu = (play_url != NULL && play_url[0] != '\0') ? play_url : NULL;
     if (g_music_head == NULL || name == NULL || name[0] == '\0') {
         return -1;
     }
@@ -151,7 +155,7 @@ int link_add_music_lib(const char *source, const char *id, const char *artist, c
     while (tail->next != NULL) {
         tail = tail->next;
     }
-    return link_insert_node_after(tail, source, id, artist, name, NULL);
+    return link_insert_node_after(tail, source, id, artist, name, pu);
 }
 
 int link_get_source_id(const char *song_name, const char *singer, char *source_buf, size_t source_size, char *id_buf, size_t id_size)
@@ -209,7 +213,7 @@ static int link_add(const char *music_name)
             i++;
         }
     }
-    return link_add_music_lib("local", normalized, "", normalized);
+    return link_add_music_lib("local", normalized, "", normalized, NULL);
 }
 
 int Parse_music_name(char *buf)
@@ -233,8 +237,26 @@ int Parse_music_name(char *buf)
     }
     for (int i = 0; i < json_object_array_length(music); i++) {
         struct json_object *music_item = json_object_array_get_idx(music, i);
-        if (music_item == NULL) continue;
-        link_add(json_object_get_string(music_item));
+        MusicSourceItem it;
+        if (music_item == NULL) {
+            continue;
+        }
+        if (json_object_is_type(music_item, json_type_string)) {
+            link_add(json_object_get_string(music_item));
+            continue;
+        }
+        if (!json_object_is_type(music_item, json_type_object)) {
+            continue;
+        }
+        memset(&it, 0, sizeof(it));
+        if (music_source_server_parse_music_item(music_item, &it) != 0) {
+            continue;
+        }
+        if (link_add_music_lib(it.source, it.song_id, it.singer, it.song_name,
+                               (it.play_url[0] != '\0') ? it.play_url : NULL) != 0) {
+            json_object_put(obj);
+            return -1;
+        }
     }
     json_object_put(obj);
     return 0;
@@ -244,33 +266,16 @@ void link_traverse_list(char** music_list)
 {
     Music_Node* current = (g_music_head != NULL) ? g_music_head->next : NULL;
     int index = 0;
-    while (current != NULL) {
+    while (current != NULL && index < GET_MAX_MUSIC) {
         char display[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
         format_display_name(current, display, sizeof(display));
         if (music_list == NULL) {
             LOGI(TAG, "id=%s singer=%s song=%s",
                  current->song_id, current->singer, current->song_name);
         } else {
-            if (index >= GET_MAX_MUSIC) {
-                break;
-            }
             music_list[index++] = strdup(display);
         }
         current = current->next;
-    }
-}
-
-void link_playlist_append_display_json_array(struct json_object *music_arr)
-{
-    Music_Node *current;
-
-    if (music_arr == NULL || g_music_head == NULL) {
-        return;
-    }
-    for (current = g_music_head->next; current != NULL; current = current->next) {
-        char display[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
-        format_display_name(current, display, sizeof(display));
-        json_object_array_add(music_arr, json_object_new_string(display));
     }
 }
 

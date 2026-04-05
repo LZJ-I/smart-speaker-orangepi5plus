@@ -1,7 +1,6 @@
 #include "music_source_manager.h"
 
 #include <arpa/inet.h>
-#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <json-c/json.h>
@@ -13,6 +12,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "music_source_server.h"
 #include "player_constants.h"
 
 static void server_result_reset(MusicSourceResult *result)
@@ -119,65 +119,6 @@ static int music_server_port(void)
         return SERVER_PORT;
     }
     return (int)port;
-}
-
-static const char *music_server_base_url(void)
-{
-    static char url[256];
-    const char *value = getenv(SERVER_MUSIC_BASE_URL_ENV);
-    if (value != NULL && value[0] != '\0') {
-        return value;
-    }
-    snprintf(url, sizeof(url), "http://%s/music/", music_server_ip());
-    return url;
-}
-
-static int append_encoded_segment(char *buf, size_t buf_size, size_t *off, const char *seg, size_t seg_len)
-{
-    size_t i;
-    if (seg_len == 0)
-        return 0;
-    for (i = 0; i < seg_len; i++) {
-        unsigned char c = (unsigned char)seg[i];
-        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            if (*off + 1 >= buf_size)
-                return -1;
-            buf[(*off)++] = (char)c;
-        } else {
-            if (*off + 3 >= buf_size)
-                return -1;
-            snprintf(buf + *off, buf_size - *off, "%%%02X", (unsigned)c);
-            *off += 3;
-        }
-    }
-    buf[*off] = '\0';
-    return 0;
-}
-
-static int encode_path_segments(const char *song_id, char *out, size_t out_size)
-{
-    const char *start = song_id;
-    const char *p;
-    size_t off = 0;
-    out[0] = '\0';
-    if (song_id == NULL || song_id[0] == '\0')
-        return -1;
-    for (p = song_id;; p++) {
-        if (*p == '/' || *p == '\0') {
-            if (append_encoded_segment(out, out_size, &off, start, (size_t)(p - start)) != 0)
-                return -1;
-            if (*p == '/') {
-                if (off + 1 >= out_size)
-                    return -1;
-                out[off++] = '/';
-                out[off] = '\0';
-                start = p + 1;
-            }
-            if (*p == '\0')
-                break;
-        }
-    }
-    return 0;
 }
 
 static int server_connect_once(void)
@@ -288,7 +229,7 @@ static int server_recv_response(int fd, char **payload_out)
     return 0;
 }
 
-static int server_parse_music_item(json_object *item_obj, MusicSourceItem *item)
+int music_source_server_parse_music_item(json_object *item_obj, MusicSourceItem *item)
 {
     json_object *value;
     const char *raw_song = NULL;
@@ -390,7 +331,7 @@ static int music_source_server_search(const char *keyword, int page, int page_si
         result->items = (MusicSourceItem *)calloc((size_t)result->count, sizeof(MusicSourceItem));
         if (result->items == NULL) goto done;
         for (i = 0; i < result->count; ++i) {
-            if (server_parse_music_item(json_object_array_get_idx(music, i), &result->items[i]) != 0) {
+            if (music_source_server_parse_music_item(json_object_array_get_idx(music, i), &result->items[i]) != 0) {
                 free(result->items);
                 result->items = NULL;
                 result->count = 0;
@@ -475,16 +416,8 @@ done:
 
 static int music_source_server_get_url(const char *source, const char *song_id, char *url_buf, size_t url_size)
 {
-    char encoded[MUSIC_ID_MAX * 3];
-    if (source == NULL || song_id == NULL || url_buf == NULL || url_size == 0)
+    if (source == NULL || song_id == NULL || url_buf == NULL || url_size == 0) {
         return -1;
-    if (strcmp(source, "server") == 0) {
-        if (encode_path_segments(song_id, encoded, sizeof(encoded)) != 0)
-            return -1;
-        if (snprintf(url_buf, url_size, "%s%s", music_server_base_url(), encoded) >= (int)url_size) {
-            return -1;
-        }
-        return 0;
     }
     return server_fetch_play_url(source, song_id, url_buf, url_size);
 }
