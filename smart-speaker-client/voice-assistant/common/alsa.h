@@ -5,8 +5,9 @@
 #include <stdio.h>
 #include <alsa/asoundlib.h>
 
-// 录音设备配置
-#define RECORD_DEVICE   "MICCM379"    // 录音设备（根据实际情况调整）
+// 录音设备：与 arecord -l 中 card 行名称子串匹配；运行时用环境变量 SMART_SPEAKER_ALSA_CAPTURE_KEYWORD 覆盖
+#define RECORD_DEVICE_ENV       "SMART_SPEAKER_ALSA_CAPTURE_KEYWORD"
+#define RECORD_DEVICE_DEFAULT   "MICCM379"
 #define RATE            16000       // ALSA请求采样率（硬件可能不支持，实际以actual_rate为准）
 #define PERIOD_SIZE     1024        // 录音缓冲区周期大小（单次读取样本数）
 #define CHANNELS        1           // 单声道（与模型一致）

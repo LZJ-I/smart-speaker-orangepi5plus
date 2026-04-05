@@ -1,6 +1,7 @@
 #define LOG_LEVEL 4
 #include "../../debug_log.h"
 #include "alsa.h"
+#include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -114,11 +115,14 @@ int get_audio_device(const char* target_device, char* result) {
 int init_alsa(void)
 {
     int ret = 0;
+    const char *keyword = getenv(RECORD_DEVICE_ENV);
+    if (keyword == NULL || keyword[0] == '\0')
+        keyword = RECORD_DEVICE_DEFAULT;
     // 0. 查找录音设备
     char record_device[MAX_DEV_NAME];
-    if(get_audio_device(RECORD_DEVICE, record_device) != 0)
+    if(get_audio_device(keyword, record_device) != 0)
     {
-        LOGE(TAG, "查找录音设备失败: %s", RECORD_DEVICE);
+        LOGE(TAG, "查找录音设备失败: %s", keyword);
         return -1;
     }
     LOGI(TAG, "找到录音设备: %s", record_device);

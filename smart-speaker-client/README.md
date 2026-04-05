@@ -24,10 +24,11 @@
 3. 完整构建
 4. 运行
 5. 环境变量（player）
-6. 音乐源
-7. Server 联调
-8. 模型下载
-9. 文档
+6. 环境变量（ASR / KWS）
+7. 音乐源
+8. Server 联调
+9. 模型下载
+10. 文档
 
 ## 生产环境依赖（请先安装）
 
@@ -165,6 +166,16 @@ SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://192.168.1.10/music/ \
 export SMART_SPEAKER_GST_ALSA_DEVICE=default
 cd player && ./run
 ```
+
+## 环境变量（ASR / KWS）
+
+`asr_kws_process`（及共用 `voice-assistant/common/alsa.c` 的录音初始化）通过 `arecord -l` 输出，按**名称子串**匹配 capture 设备。
+
+| 变量 | 作用 | 默认值 |
+|------|------|--------|
+| `SMART_SPEAKER_ALSA_CAPTURE_KEYWORD` | 与 `arecord -l` 里某行 card 描述中一致的子串（如板载 mic 常为 `rockchipes8388`，USB 设备名则因机而异） | `MICCM379`（与 `voice-assistant/common/alsa.h` 中 `RECORD_DEVICE_DEFAULT` 一致） |
+
+未设置或为空字符串时回退默认。示例：`export SMART_SPEAKER_ALSA_CAPTURE_KEYWORD=rockchipes8388` 后在同一终端运行 `./asr_kws_process`。
 
 ## 音乐源
 
