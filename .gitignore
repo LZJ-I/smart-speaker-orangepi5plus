@@ -23,5 +23,5 @@ venv/
 
 # Logs & dumps
 *.log
-core
+/core
 vgcore.*

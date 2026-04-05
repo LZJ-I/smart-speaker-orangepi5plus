@@ -92,16 +92,29 @@ static const char *gst_alsa_device_string(void)
     return GST_ALSA_DEVICE;
 }
 
-static void disable_proxy_for_playback(void)
+/* libsoup 读 http_proxy；此前曾 unset 导致板子经 Windows Clash 时无法播 CDN */
+static void ensure_gst_http_proxy_env(void)
 {
-    unsetenv("http_proxy");
-    unsetenv("HTTP_PROXY");
-    unsetenv("https_proxy");
-    unsetenv("HTTPS_PROXY");
-    unsetenv("all_proxy");
-    unsetenv("ALL_PROXY");
-    setenv("no_proxy", "127.0.0.1,localhost", 1);
-    setenv("NO_PROXY", "127.0.0.1,localhost", 1);
+    static const char k_default_ics[] = "http://192.168.137.1:7897";
+    const char *cur;
+    const char *p;
+
+    if (getenv("SMART_SPEAKER_NO_GST_PROXY") != NULL)
+        return;
+    cur = getenv("http_proxy");
+    if (cur != NULL && cur[0] != '\0')
+        return;
+    p = getenv("SMART_SPEAKER_HTTP_PROXY");
+    if (p == NULL || p[0] == '\0')
+        p = k_default_ics;
+    setenv("http_proxy", p, 1);
+    setenv("HTTP_PROXY", p, 1);
+    setenv("https_proxy", p, 1);
+    setenv("HTTPS_PROXY", p, 1);
+    if (getenv("no_proxy") == NULL || getenv("no_proxy")[0] == '\0') {
+        setenv("no_proxy", "127.0.0.1,localhost,::1", 1);
+        setenv("NO_PROXY", "127.0.0.1,localhost,::1", 1);
+    }
 }
 
 #define GST_HTTP_USER_AGENT \
@@ -250,7 +263,7 @@ int run_gst_player(const char *initial_uri)
     data.paused = FALSE;
     setenv("GST_GL", "disable", 1);
     setenv("DISPLAY", "", 1);
-    disable_proxy_for_playback();
+    ensure_gst_http_proxy_env();
     setup_local_gst_plugin_path();
     gst_init(NULL, NULL);
     GstElement *asink = gst_element_factory_make("alsasink", "asink");
