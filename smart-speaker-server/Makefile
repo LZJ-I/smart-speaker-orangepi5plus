@@ -27,7 +27,8 @@ LIBS = -L$(MUSIC_LIB_DIR) -lmusic_downloader $(EVENT_LIBS) $(JSON_LIBS) $(MYSQL_
 RPATH = -Wl,-rpath,'$$ORIGIN/$(MUSIC_LIB_DIR)'
 
 TARGET = server_smart_speaker
-SRCS = src/main.cpp src/server.cpp src/database.cpp src/player.cpp src/music_remote_list.cpp src/app_log.cpp
+SRCS = src/main.cpp src/server.cpp src/database.cpp src/player.cpp src/music_remote_list.cpp src/app_log.cpp \
+	src/runtime_config.cpp src/music_service_client.cpp src/music_runtime_init.cpp
 OBJS = $(SRCS:.cpp=.o)
 
 .PHONY: all clean tests stop music-lib
