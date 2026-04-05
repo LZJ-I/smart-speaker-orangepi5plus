@@ -28,7 +28,7 @@ int main(int argc, char **argv)
 
     memset(&r, 0, sizeof(r));
     if (srv->search(kw, 1, 5, &r) != 0) {
-        fprintf(stderr, "list_music TCP 失败（检查 SMART_SPEAKER_SERVER_IP/PORT 与服务端）\n");
+        fprintf(stderr, "list_music TCP 失败（检查 data/config/client.toml 的 server_ip/server_port 与服务端）\n");
         return 1;
     }
     if (r.count <= 0) {

@@ -2,7 +2,7 @@
 
 ![客户端模块（霓虹赛博）](../readme-illustrations/neon-client-focus.svg)
 
-智能音箱客户端，当前拆成 `player`、`voice-assistant`、`supervisor`、`ipc`、`tools`、`assets`、`docs`。
+智能音箱客户端，当前拆成 `player`、`voice-assistant`、`supervisor`、`ipc`、`tools`、`assets`、`docs`；运行期配置与日志在 **`data/`**（已 `.gitignore`，见 `player/core/runtime_config.c`）。
 
 ## 目录
 
@@ -23,12 +23,13 @@
 2. 本地最小可运行
 3. 完整构建
 4. 运行
-5. 环境变量（player）
-6. 环境变量（ASR / KWS）
-7. 音乐源
-8. Server 联调
-9. 模型下载
-10. 文档
+5. 运行时配置（player，`data/config/client.toml`）
+6. 可选环境变量（调试与其它）
+7. 环境变量（ASR / KWS 录音设备）
+8. 音乐源
+9. Server 联调
+10. 模型下载
+11. 文档
 
 ## 生产环境依赖（请先安装）
 
@@ -78,9 +79,11 @@ cd smart-speaker-client
 make -C player
 # 挂载SD卡到本地目录，例如
 # sudo mount /dev/mmcblk1p1 /mnt/sdcard
-export SMART_SPEAKER_LOCAL_MUSIC_DIR=/path/to/music
 cd player
 ./run
+# 首次运行后编辑（路径取决于 CWD，见下节「运行时配置」）
+# nano ../data/config/client.toml   # 若在 player/ 下启动
+# 将 local_music_root 改为你的曲库根目录，或保持默认 /mnt/sdcard/
 ```
 
 本地曲库目录建议：
@@ -93,7 +96,7 @@ cd player
 
 ```
 
-`SMART_SPEAKER_LOCAL_MUSIC_DIR` 未设置时，默认扫描 `/mnt/sdcard/`。
+未改 `client.toml` 时，`local_music_root` 默认与 `player_constants.h` 中 `SDCARD_MOUNT_PATH` 一致（当前为 `/mnt/sdcard/`）。
 
 ## 完整构建
 
@@ -110,68 +113,33 @@ make
 - 全链路运行：`make run`
 - 停止：`make stop`
 
-## 环境变量（player）
+## 运行时配置（player，`data/config/client.toml`）
 
-宏名与字符串默认值集中在 `player/core/player_constants.h`（如 `SERVER_IP`、`SERVER_PORT`、`SERVER_MUSIC_BASE_URL`）。下表为 `player` 进程会读取的**环境变量**：未设置或非空校验失败时，回退到表中「默认值」列（与头文件宏一致；改默认请改宏并重新编译）。
+`player/core/runtime_config.c`：**首次启动**若配置文件不存在，会创建 `data/` 与 `data/config/client.toml`。键值对与默认说明写在文件头注释中；合法 `player_mode` 为 `auto`、`online`、`offline`；`music_search_source` 为 `tx` / `wy` / `kw` / `kg` / `mg` / `auto` / `all`。
 
-**在线 server 地址**：`player_constants.h` 中默认宏为**本机** `SERVER_IP`=`127.0.0.1`、`SERVER_PORT`=`8888`；HTTP 前缀未单独设环境变量时按当前选用的 IP 拼为 `http://<该 IP>/music/`（与宏一致时为 `http://127.0.0.1/music/`）。**连内网、生产或其它机器上的 server 时，须在你自己的运行环境里设置** `SMART_SPEAKER_SERVER_IP`、`SMART_SPEAKER_SERVER_PORT`（若与默认 `8888` 不同）、以及按需 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL`（须与 HTTP 曲库根 URL 一致）。
+**路径**：进程当前目录下若已有 `./fifo/asr_fifo`，则配置为 **`./data/config/client.toml`**（通常为客户端仓库根经 `init.sh` 后的工作目录）；若在 `player/` 下直接执行 `./run`，则为 **`../data/config/client.toml`**。
 
-| 变量 | 作用 | 默认值 |
-|------|------|--------|
-| `SMART_SPEAKER_LOCAL_MUSIC_DIR` | 本地曲库根目录 | `/mnt/sdcard/` |
-| `SMART_SPEAKER_SERVER_IP` | server TCP / 曲库请求的 IP | `player_constants.h` 中 `SERVER_IP`（当前为 `127.0.0.1`） |
-| `SMART_SPEAKER_SERVER_PORT` | server TCP 端口 | `player_constants.h` 中 `SERVER_PORT`（当前为 `8888`）；非法字符串则回退该宏 |
-| `SMART_SPEAKER_SERVER_MUSIC_BASE_URL` | 在线歌曲 HTTP URL 前缀（`+ path`） | 未设置时由实现按当前选用的 IP 拼为 `http://<该 IP>/music/`；头文件中另有 `SERVER_MUSIC_BASE_URL` 宏与之一致 |
-| （部署在 **server** 上）`SMART_SPEAKER_MUSIC_API_KEY` | 第三方音源取链 Key；**未设置则精准在线搜歌关闭**，`list_music` 返回 `online_search_enabled=false`，player 播报 `./assets/tts/online_music_unsupported.wav` | 无（须自行 export） |
-| `SMART_SPEAKER_PLAYER_MODE` | 设为 `offline`（大小写不敏感）时强制离线：不建 TCP 长连、并通知 ASR/KWS 离线；其它或未设视为在线 | 在线 |
-| `SMART_SPEAKER_GST_ALSA_DEVICE` | 传给 GStreamer `alsasink` 的 device 字符串 | `dmix:CARD=rockchipes8388,DEV=0` |
+| 键 | 作用 |
+|----|------|
+| `server_ip` | TCP 长连与 `music_source_server` 对端 |
+| `server_port` | 同上 |
+| `local_music_root` | 本地曲库根目录 |
+| `startup_volume` | 启动音量 0～100 |
+| `player_mode` | `offline` 不连服务端；`auto`/`online` 先尝试 TCP |
+| `gst_alsa_device` | 传给 GStreamer `alsasink` 的 device |
+| `music_search_source` | 与 server 侧在线搜源语义对齐的默认源 |
 
-**Shell 里怎么用**
+`player/core/player_constants.h` 里仍有 `SMART_SPEAKER_*` 字符串宏名，**当前 player 运行时配置不读取这些环境变量**，仅以本 TOML（及首次写入时用的头文件宏默认值）为准。改默认可改头文件宏后删除旧 `client.toml` 再跑，或直接编辑 TOML。
 
-- **当前终端里一直生效到关闭终端**：先 `export 变量名=值`，再启动进程；可用 `echo $变量名` 查看是否带上。
-- **只作用于这一次命令**（不写进环境、不改 `~/.bashrc`）：在命令前写 `变量=值`，多个用空格隔开，例如 `SMART_SPEAKER_SERVER_IP=10.102.178.47 SMART_SPEAKER_SERVER_PORT=8888 ./run`（须在 `player` 目录下或写成可执行文件路径）。
-- **恢复为头文件宏默认**：`unset 变量名`（例如 `unset SMART_SPEAKER_SERVER_IP`），然后重新开 `./run`。
-- **长期默认**：把 `export ...` 写进 `~/.bashrc` 或 systemd service 的 `Environment=`，按你的部署方式选择。
+## 可选环境变量（调试与其它）
 
-**GStreamer**：若存在仓库内 `3rdparty/gstreamer-alsa/.../gstreamer-1.0` 插件目录，启动时会设置 `GST_PLUGIN_PATH` 为 **`bundled : 系统插件目录 : 原环境变量`**（系统目录为本机存在的 `/usr/lib/<multiarch>/gstreamer-1.0` 等之一），避免仅指向 bundled 时**扫不到**系统里的 AAC 解码等插件。也可自行预先 `export GST_PLUGIN_PATH=...`。
+| 变量 | 作用 | 代码位置 |
+|------|------|----------|
+| `SMART_SPEAKER_LINK_DEBUG` | 链路调试开关 | `player/net/link.c` |
+| `SMART_SPEAKER_LINK_DEBUG_PATH` | 调试输出路径 | `player/net/link.c` |
+| `GST_PLUGIN_PATH` | GStreamer 插件搜索路径；若存在仓库内 bundled 插件目录，启动逻辑会前置系统路径 | `player/core/player_gst.c` |
 
-**示例**
-
-```bash
-# 仅本地曲库、无 server
-export SMART_SPEAKER_PLAYER_MODE=offline
-export SMART_SPEAKER_LOCAL_MUSIC_DIR=/home/orangepi/Music
-cd player && ./run
-```
-
-```bash
-# 本机起 server（与宏默认一致，一般不用 export）
-cd player && ./run
-```
-
-```bash
-# 内网 / 生产：在自有环境中设置（IP、端口、HTTP 前缀按你的 server 修改）
-export SMART_SPEAKER_SERVER_IP=10.102.178.47
-export SMART_SPEAKER_SERVER_PORT=8888
-export SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://10.102.178.47/music/
-cd player && ./run
-```
-
-```bash
-# 同上，只对这一次 ./run 生效（在 player 目录）
-SMART_SPEAKER_SERVER_IP=192.168.1.10 \
-SMART_SPEAKER_SERVER_PORT=8888 \
-SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://192.168.1.10/music/ \
-./run
-```
-
-```bash
-# 与系统默认 ALSA（如 ~/.asoundrc 的 pcm.!default）一致
-export SMART_SPEAKER_GST_ALSA_DEVICE=default
-cd player && ./run
-```
-
-## 环境变量（ASR / KWS）
+## 环境变量（ASR / KWS 录音设备）
 
 `asr_kws_process`（及共用 `voice-assistant/common/alsa.c` 的录音初始化）通过 `arecord -l` 输出，按**名称子串**匹配 capture 设备。
 
@@ -183,17 +151,16 @@ cd player && ./run
 
 ## 音乐源
 
-- 本地：`file://...`，扫描目录见上表 `SMART_SPEAKER_LOCAL_MUSIC_DIR`
-- server：`list_music` / `search_music` 经 `SMART_SPEAKER_SERVER_IP:SMART_SPEAKER_SERVER_PORT`；播放 URL 为 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL + <path>`
-- 在线/离线由 `SMART_SPEAKER_PLAYER_MODE` 控制，见上表
+- 本地：`file://...`，根目录为 `client.toml` 的 `local_music_root`
+- server：TCP 对端为 `client.toml` 的 `server_ip`:`server_port`；可播 URL 主要来自服务端 JSON 的 `play_url`（在线解析链路由 server 配置，见 `smart-speaker-server/README.md`）
+- 在线/离线：`client.toml` 的 `player_mode`
 
 ## Server 联调
 
-在线搜歌依赖 `smart-speaker-server` 与 Apache 静态目录：
+在线解析与本地曲库扫描依赖 **`smart-speaker-server`** 及其 **`data/config/*.toml`**（`music_root` 等），详见服务端 README。
 
-- TCP：未设环境变量时与宏一致，为 `127.0.0.1:8888`；连其它主机或改端口请设置 `SMART_SPEAKER_SERVER_IP`、`SMART_SPEAKER_SERVER_PORT`
-- HTTP：未单独设 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL` 时为 `http://<当前选用的 server IP>/music/`（宏默认下为 `http://127.0.0.1/music/`）；也可直接设 `SMART_SPEAKER_SERVER_MUSIC_BASE_URL`
-- 协议：`list_music`（在线列表）、`search_music`（关键词）
+- TCP：默认 `127.0.0.1:8888`；连其它主机时在 **`client.toml`** 改 `server_ip` / `server_port`
+- 协议：`list_music`、`search_music` 等见 `smart-speaker-server/docs/接口定义.txt`
 
 **目录说明**：`make`、`make tests`、`./tests/test_client` 必须在 **`smart-speaker-server`** 目录执行，不是在 `smart-speaker-client` 下。与 client 同级时：
 
@@ -201,9 +168,7 @@ cd player && ./run
 cd ../smart-speaker-server
 make
 make tests
-# server 在本机且 client 默认宏未改时可省略；server 在别台时请 export：
-# export SMART_SPEAKER_SERVER_IP=你的server地址
-# export SMART_SPEAKER_SERVER_PORT=8888
+# 测 TCP 连对端：环境变量 SMART_SPEAKER_SERVER_IP / PORT（见 tests/test_client.c）
 ./tests/test_client
 ```
 
@@ -211,29 +176,21 @@ make tests
 
 ### 在线搜歌 → HTTP URL 小测（不跑完整 `run`）
 
-板子上需同时：**TCP 服务已起**、**Apache 可访问 `/music/`**。在 `player` 目录：
+需 **`./server_smart_speaker` 已启动**（及 `music.toml` / Node 子服务就绪）。在 `player` 目录：
 
 ```bash
 make test_online_music_chain
-# 默认已指向本机 127.0.0.1:8888；非本机时取消注释并修改：
-# export SMART_SPEAKER_SERVER_IP=...
-# export SMART_SPEAKER_SERVER_PORT=8888
-# export SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://.../music/
+# 对端与 player 一致：先配好 data/config/client.toml 的 server_ip / server_port（在含 fifo 的工作目录或 ../data）
 ./test_online_music_chain 雪
 ```
 
-会打印 `path=` 与 **已百分号编码** 的 `url=`；可用 `curl -I` 打该 `url` 验证 Apache。加 `--play` 会尝试 `gst-launch-1.0 playbin` 试播（需 GStreamer；失败可忽略）。
+会打印 `url=` 等；可用 `curl -I` 抽查 `play_url` 是否可访问。加 `--play` 会尝试 `gst-launch-1.0 playbin` 试播（需 GStreamer；失败可忽略）。
 
 ### 完整 `run` 调试（长连 + 搜歌 + 播放）
 
-1. **三件套先起**：`mysqld`、`./server_smart_speaker`、`apache2`；曲库在 `/var/www/html/music/` 或设好 `SMART_SPEAKER_MUSIC_PATH`（服务端）。
-2. **环境变量**（**仅当 server 不在本机或与默认端口/HTTP 路径不一致时**在运行环境中设置；本机联调一般可省略）：
-   ```bash
-   export SMART_SPEAKER_SERVER_IP=10.102.178.47
-   export SMART_SPEAKER_SERVER_PORT=8888
-   export SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://10.102.178.47/music/
-   ```
-3. **`player/core/main.c` 已重新启用 `socket_init()`**：成功则日志有 `TCP 长连成功`；失败则 `TCP 长连失败`（**不会**自动走 `player_switch_offline_mode`，避免无 U 盘时被 TTS/挂载逻辑卡死）。失败时搜歌仍可用 `music_source_server` 的短时连接 + 本地回退。在线精准搜歌由 **服务端** `list_music` + `smart-speaker-server/music-lib` 返回可播 URL；泛说「听歌/热门」等仍走服务端本地曲库分页。
+1. **先起**：`mysqld`、`./server_smart_speaker`（见服务端 README：`music.toml`、Node `music-service`）；服务端本地扫描目录为 **`data/config/server.toml`** 的 `music_root`（默认 `data/music-library/`）。
+2. **客户端**：在 `client.toml` 中设置 `server_ip` / `server_port`（及按需 `player_mode`）；与默认不一致时必改，本机联调可保持默认。
+3. **`player/core/main.c` 已重新启用 `socket_init()`**：成功则日志有 `TCP 长连成功`；失败则 `TCP 长连失败`（**不会**自动走 `player_switch_offline_mode`，避免无 U 盘时被 TTS/挂载逻辑卡死）。失败时搜歌仍可用 `music_source_server` 的短时连接 + 本地回退。在线列表/解析由 **服务端** `list_music` 等与 **music-service**（及 Rust `music-lib`）协同返回 `play_url`；泛说「听歌/热门」等仍走服务端本地曲库分页。
 4. **看日志**：`player/core/main.c` 顶部 `LOG_LEVEL`（默认 4）控制 `debug_log.h` 输出；终端跑 `./run` 直接看。关键 TAG：`PLAYER-MAIN`、`SOCKET`、`PLAYER`。可 `grep SOCKET` 或全文检索 `连接服务器`。
 5. **分层排障**：先 `./test_online_music_chain`；再 `curl -I` 打印出的 `url`；最后 `./run`。服务端终端应出现新 TCP 连接；若只有搜歌无长连，检查是否 `socket_init` 报错。
 6. **GDB**（可选）：`gdb --args ./run`，断点示例 `b socket_init`、`b music_source_server_search`。

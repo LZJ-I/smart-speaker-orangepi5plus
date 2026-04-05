@@ -12,7 +12,6 @@
 
 #define GET_MAX_MUSIC 5
 #define DEFAULT_PAGE_SIZE 10
-#define MUSIC_PATH "/var/www/html/music/"
 
 class Server
 {

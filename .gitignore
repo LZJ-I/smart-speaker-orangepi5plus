@@ -25,3 +25,6 @@ venv/
 *.log
 /core
 vgcore.*
+
+# Runtime state (client/server 各自 data/；根目录若误建也忽略)
+data/

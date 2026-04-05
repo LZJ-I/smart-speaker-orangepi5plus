@@ -1,6 +1,9 @@
 # runtime
 data/
 
+# Node music-service
+music-service/node_modules/
+
 # build
 server_smart_speaker
 src/*.o

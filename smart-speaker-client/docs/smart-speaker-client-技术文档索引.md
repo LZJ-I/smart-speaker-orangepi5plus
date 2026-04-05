@@ -1,5 +1,6 @@
 # smart-speaker-client 技术文档索引
 
+- 服务端 TCP/JSON 字段摘要：仓库内 `smart-speaker-server/docs/接口定义.txt`
 - `docs/smart-speaker-client-目录框架重构规范.md`（**当前目录与模块划分**，已按现有代码更新）
 - `docs/smart-speaker-client-框架重构说明.md`（计划中的 framework 层设计，**当前未全文落地**）
 - `docs/smart-speaker-client-语音链路状态机与恢复播放方案.md`（状态机、恢复策略、ASR 超时恢复）
@@ -11,6 +12,9 @@
 - `docs/smart-speaker-client-TTS与音乐输出冲突方案.md`（TTS 与音乐共用 dmix、可选暂停/恢复）
 - `docs/语音播放与IPC问题修复总结.md`（TTS/ASR IPC、尾音、打断、静音覆盖等修复汇总）
 - `docs/smart-speaker-client-player-三进程播放与分页状态机技术基线.md`（播放器三进程、分页、模式语义、一致性基线）
+- `docs/smart-speaker-client-player-离线在线切换与兜底策略.md`（离线/在线切换与兜底）
+- `docs/smart-speaker-client-player-规则匹配示例清单.md`（规则匹配示例）
+- `docs/smart-speaker-client-SD卡加载与卸载实操示例.md`（SD 挂载/卸载操作）
 - `docs/smart-speaker-client-player-运行时调试与框架知识总结.md`（本轮问题根因、架构约束、调试方法论）
 - `docs/smart-speaker-音乐申请链路与存储.md`（**歌曲/歌单/歌手** 请求链路：TCP→C++→Node/Rust；客户端链表与共享内存；服务端缓存与本地曲库）
 

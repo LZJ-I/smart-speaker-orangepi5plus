@@ -2,14 +2,15 @@
 
 ![服务端枢纽（霓虹赛博）](../readme-illustrations/neon-server-focus.svg)
 
-TCP 服务端：设备/APP 转发、账号（MySQL）、本地曲库扫描（与 Apache 静态目录共用磁盘）。
+TCP 服务端：设备/APP 转发、账号（MySQL）、本地曲库磁盘扫描、`music-lib`（Rust）与 `music-service`（Node）在线解析。
 
 ## 目录
 
-- `include/`：头文件
-- `src/`：源码
-- `tests/`：联调小程序
-- `docs/`：协议说明
+- `include/`、`src/`：C++ TCP 服务
+- `music-lib/`：Rust `music_downloader`，产出 `libmusic_downloader.so`（`list_music` 带关键词时的远程搜索/首条取链等）
+- `music-service/`：Node HTTP 子服务（`index.js`，部分 `app_*` 与解析反代）
+- `tests/`：联调小程序（可用环境变量指定连测地址）
+- `docs/`：`接口定义.txt` 等
 
 ## 依赖（开发）
 
@@ -22,24 +23,30 @@ sudo apt install -y \
   default-libmysqlclient-dev \
   libssl-dev \
   pkg-config \
-  cargo
+  cargo \
+  curl \
+  nodejs
 ```
 
-若无 `default-libmysqlclient-dev`：`sudo apt install -y libmysqlclient-dev`
+若无 `default-libmysqlclient-dev`：`sudo apt install -y libmysqlclient-dev`。`music-service/index.js` 当前仅用 Node 内置模块，无强制 `npm install`。
 
 ### Rust（music-lib）
 
-聚合搜歌与取流 URL 使用仓库内 **`music-lib/`**（Rust crate `music_downloader`，产出 `libmusic_downloader.so`）。`make` 时会自动执行 `cargo build --release`。
+`make` 时会 `cargo build --release`。可执行文件通过 `rpath` 加载 `music-lib/target/release/libmusic_downloader.so`；若移动二进制须同步 `.so` 或 `LD_LIBRARY_PATH`。
 
-- **Rust**：建议 `rustup` 安装 stable（需支持 `edition = "2024"` 的 toolchain，或把 `music-lib/Cargo.toml` 中 `edition` 改为 `2021`）。
-- **OpenSSL**：`music-lib` 依赖 `openssl-sys`（`libssl-dev` 已覆盖）。
-- **环境变量**：
-  - **`SMART_SPEAKER_MUSIC_API_KEY`（必填，否则关闭在线取链与精准在线搜歌）**：第三方音源接口 Key（与洛雪等脚本中 `X-API-Key` 一致）。未设置时，`list_music` 对**非泛化关键词**返回空列表且 `online_search_enabled=false`；`get_play_url` 返回 `result=disabled`；嵌入式端将播报「在线搜歌功能尚未配置」提示音（需用 `tools/gen_mode_tts_wav.sh` 生成 `assets/tts/online_music_unsupported.wav`）。
-  - `SMART_SPEAKER_MUSIC_API_URL`：音源 API 根路径，默认 `https://source.shiqianjiang.cn/api/music`。
-  - `SMART_SPEAKER_MUSIC_PLATFORM`：搜索平台，`auto`（默认，**优先 QQ 再网易云**）/`tx`/`wy`。QQ 公开搜索接口可能出现 **HTTP 500** 或空结果，此时 `auto` 会回退网易云；若只要 QQ 结果可设 `tx`。
-  - `SMART_SPEAKER_MUSIC_QUALITY`：取链音质，默认 `128k`
+- **Rust**：建议 `rustup` stable；若 toolchain 不支持 `edition = "2024"`，可将 `music-lib/Cargo.toml` 改为 `2021`。
 
-**运行 `server_smart_speaker` 时**需能加载同目录相对路径下的 `music-lib/target/release/libmusic_downloader.so`（Makefile 已设置 `rpath`）；若移动可执行文件，请同步拷贝 `.so` 或设置 `LD_LIBRARY_PATH`。
+## 配置文件（`data/`，已 `.gitignore`）
+
+均在 **`smart-speaker-server` 当前工作目录** 下相对路径；首次运行会创建默认文件（见 `src/runtime_config.cpp`、`src/music_runtime_init.cpp`）。
+
+| 文件 | 作用 |
+|------|------|
+| `data/config/server.toml` | `bind_ip`、`bind_port`、`music_root`（本地曲库扫描根，默认 `data/music-library/`）、`legacy_platform` / `legacy_quality`（传给 Rust 搜歌/取链）、`music_service_host` / `music_service_port` / `music_service_base_path`（Node 子服务） |
+| `data/config/music.toml` | 洛雪脚本下载与 API：`lx_script_import_url`、`lx_script_save_path`、`music_api_url`、`music_api_key`、`music_user_agent` 等 |
+| `data/config/music-service.toml` | Node 监听与脚本路径；启动时由 C++ 根据 `music.toml` 同步 `resolver_api_*` 与 `music_source_script` |
+
+**启动硬前置**：`music_runtime_init()` 必须成功（存在可读洛雪类 `lx.js` 且能解析出 `API_URL`/`API_KEY`，或 `music.toml` 已填 `music_api_url` / `music_api_key`），否则 `server_smart_speaker` **直接退出**（见 `src/main.cpp`）。终端会打印缺失项与配置文件路径。
 
 ## 运行期
 
@@ -56,37 +63,7 @@ FLUSH PRIVILEGES;
 
 服务启动时会自动建表 `account`（若不存在）。
 
-### Apache（HTTP 下发 mp3）
-
-服务端 **不** 内置 HTTP；设备在线播放 URL 一般为 `http://<主机>/music/...`，需本机安装 Apache（或 nginx）并把站点根指到放歌的目录。
-
-**安装与启动（简要）**
-
-```bash
-sudo apt update
-sudo apt install -y apache2
-sudo systemctl enable apache2   # 开机自启（可选）
-sudo systemctl start apache2
-sudo systemctl status apache2   # 应显示 active (running)
-```
-
-本机可测：`curl -I http://127.0.0.1/` 应返回 `HTTP/1.1 200`。若改配置后需重载：`sudo systemctl reload apache2`；停止：`sudo systemctl stop apache2`。
-
-默认 `DocumentRoot` 为 `/var/www/html`。把歌曲放到：
-
-```text
-/var/www/html/music/
-├── 歌手目录/
-│   └── 歌曲.mp3
-```
-
-与代码默认 `MUSIC_PATH` 一致。若曲库不在该路径，启动前设置：
-
-```bash
-export SMART_SPEAKER_MUSIC_PATH=/你的/音乐根目录/
-```
-
-（须以 `/` 结尾或程序会自动补；目录结构仍为「子目录=歌手，内为 .mp3」。）
+本地随机/关键词分页等仍遍历 **`music_root`** 下目录结构（子目录为歌手名，内为音频文件）。默认目录为仓库下 **`data/music-library/`**（在 `server.toml` 修改；相对路径相对 `server_smart_speaker` 工作目录）。
 
 ## 编译
 
@@ -96,33 +73,27 @@ make
 make tests   # 可选
 ```
 
-链接：`libevent`、`libjsoncpp`、`libmysqlclient`、`crypto`、`libmusic_downloader`（Rust 构建）、`pthread`、`dl`。
+链接：`libevent`、`libjsoncpp`、`libmysqlclient`、`crypto`、`libmusic_downloader`、`pthread`、`dl`。
 
 ## 运行
 
-端口占用时：
-
 ```bash
-make stop
+make stop   # 可按环境变量 SMART_SPEAKER_SERVER_PORT 杀占用端口（默认 8888）
 ./server_smart_speaker
 ```
 
-环境变量：
+- **监听地址/端口、曲库根**：`data/config/server.toml` 的 `bind_ip`、`bind_port`、`music_root`（**不再**使用文档中已废弃的 `SMART_SPEAKER_SERVER_IP` / `SMART_SPEAKER_MUSIC_PATH` 作为运行配置）。
+- **联测小程序**：`tests/test_client.c` / `test_app.cpp` 仍可用 **`SMART_SPEAKER_SERVER_IP`**、**`SMART_SPEAKER_SERVER_PORT`** 指向被测实例。
+- **music-lib 独立示例**：`music-lib/examples/` 内程序若需 Key，以该目录 README 为准（与 C++ 主服务的 `music.toml` 配置方式不同）。
 
-- `SMART_SPEAKER_SERVER_IP`：监听 IP，默认 `0.0.0.0`（见 `src/main.cpp`）
-- `SMART_SPEAKER_SERVER_PORT`：端口，默认 `8888`
-- `SMART_SPEAKER_MUSIC_PATH`：曲库扫描根目录，默认 `/var/www/html/music/`
-- `SMART_SPEAKER_MUSIC_API_KEY` / `SMART_SPEAKER_MUSIC_API_URL`：见上文 Rust 小节
+初始化失败（`music_runtime_init`、MySQL 等）时退出码为 1。`music_service_restart_local` 失败会打印 **`music-service 未就绪`**，但 TCP 服务仍可能继续启动（本地曲库等不依赖 Node 的路径仍可用）。
 
-初始化失败（连不上 MySQL 等）时进程退出码为 1。
-
-在 **`smart-speaker-server` 当前工作目录**下启动时，标准输出与 **`data/server/app.log`** 会同步写入同一套运行日志（`data/` 已加入 `.gitignore`）。
+日志：标准输出与 **`data/server/app.log`**（`app_log_init`）。
 
 ## 协议要点
 
-TCP：4 字节小端长度 + UTF-8 JSON。支持 `get_music`、`search_music`、`list_music`、`get_play_url`、`resolve_music`、`device_report`、各类 `app_*` 等（见 `src/server.cpp`）。
+TCP：4 字节小端长度 + UTF-8 JSON。字段与示例见 **`docs/接口定义.txt`**；实现以 `src/server.cpp` 为准。
 
-- **`list_music`**：可选字段 **`keyword`**。泛意图（空、`热门`、`听歌` 等）→ **本地**随机分页，并带 `online_search_enabled=true`。**精准关键词**且**已配置** `SMART_SPEAKER_MUSIC_API_KEY`：远程搜索分页；**仅第一条**填充 `play_url`（减少取链次数），其余条需客户端按需 `get_play_url`。未配置 Key：返回空 `music`、`online_search_enabled=false`。远程无结果时回退本地关键词分页。
-- **`get_play_url`**：字段 **`source`**、**`song_id`**。未配置 Key 时 `result=disabled`。否则 `result=ok` 且含 **`play_url`**。
-- **`resolve_music`**：字段 **`keyword`**（非泛化）。一次「搜索首条 + 取链」，响应 **`reply_resolve_music`**：`result` 为 `ok` 时含 `play_url`/`source`/`song_id`/`singer`/`song`；`disabled`/`fail` 含义同取链失败或未配置 Key。
-- **`search_music`**：仍表示仅扫本地磁盘路径的关键词分页。
+- **`list_music`**：无关键词或泛意图 → 本地随机分页缓存；有关键词且 Rust 侧 `music_api_configured()` → `music_remote_list.cpp` 远程分页，**仅第一条**填 `play_url`，其余由客户端 `get_play_url` 等补链；API 未就绪时回退本地关键词或空结果。
+- **`get_play_url` / `resolve_music`**：与 Rust/Node 组合实现相关，未就绪时返回 `disabled`/`fail`。
+- **`search_music`**：仅扫 `music_root` 下本地路径。

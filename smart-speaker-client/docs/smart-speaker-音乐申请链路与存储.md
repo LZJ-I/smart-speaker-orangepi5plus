@@ -29,7 +29,7 @@
 | **在当前曲后插入一页搜索结果** | `music_lib_insert_search_after_current` | 同上 | 同上 |
 | **语音/异步「点歌」单条解析** | `music_source_server_resolve_keyword`：先 `music.search.song` 取第一页第一条，若无 `play_url` 再 `music.url.resolve` | `music.search.song`，必要时 `music.url.resolve` | 搜歌走 Node；取链 `proxy_music_service_resolve` → `POST /music/url/resolve` |
 | **歌单（在线且 ASR 含「歌单」）** | `music_source_server_resolve_playlist_keyword`：`music.search.playlist` 取首个歌单 → `music.playlist.detail` 拉曲目列表 | `music.search.playlist`、`music.playlist.detail` | `proxy_music_service_list` / `proxy_music_service_detail` → Node 对应路径 |
-| **仅本地** | `music_source_local` `search` / `get_url` | 无 TCP（不经过 server） | 扫描 `SMART_SPEAKER_LOCAL_MUSIC_DIR` 等配置的根目录 |
+| **仅本地** | `music_source_local` `search` / `get_url` | 无 TCP（不经过 server） | 扫描 `data/config/client.toml` 的 `local_music_root`（`player_runtime_local_music_root`） |
 
 **说明**：player 侧 **未** 直接调用 TCP `list_music` / `search_music` / `resolve_music` 填链；当前在线搜歌主路径是 **`music.search.song`**。C++ 仍保留 **`list_music`** 等命令，供其它客户端或兼容路径使用（见下节）。
 
@@ -84,14 +84,14 @@
 | 当前播放列表 | **进程内双向链表** `g_music_head`，节点 **`Music_Node`**（`link.h`：`source`、`song_id`、`song_name`、`singer`、`play_url` 等） | 退出进程即失；翻页/搜歌会 `link_clear_list` 或插入片段 |
 | 当前曲目标识 / 模式 / PID | **共享内存** `Shm_Data`（`shm.h`：`current_music`、`current_singer`、`current_song_id`、`current_mode`、`parent_pid`/`child_pid`/`grand_pid`） | 父子进程同步；**不含** `source`，在线取链依赖链表节点 |
 | 分页搜歌上下文 | **`player_playlist_ctx_t`**（`player_types.h`，如 `keyword`、`current_page`、`total_pages`） | 内存，用于「热门」等续页 |
-| 本地音频文件 | **文件系统**（如 SD 挂载目录、`SMART_SPEAKER_LOCAL_MUSIC_DIR`） | 仅路径与扫描结果进链表；不拷贝音频进 SHM |
+| 本地音频文件 | **文件系统**（如 SD 挂载目录、`client.toml` 的 `local_music_root`） | 仅路径与扫描结果进链表；不拷贝音频进 SHM |
 
 ### 5.2 服务端（C++）
 
 | 数据 | 存储位置 | 说明 |
 |------|----------|------|
 | 无关键词 `list_music` 用曲库列表 | **内存向量** `g_list_music_cache`（`server.cpp`），首次扫盘后 shuffle，进程存活期间复用 | 非数据库 |
-| 本地曲库文件元数据 | **磁盘**：`music_root`（如 `/var/www/html/music/`）目录遍历 | 与 Apache 静态 `music/` 可一致，供 HTTP 直链 |
+| 本地曲库文件元数据 | **磁盘**：`server.toml` 的 `music_root`（默认 `data/music-library/`）目录遍历 | 供 `search_music` / 本地分页等；可播 URL 由在线解析链路返回 |
 | 在线 URL、搜索结果 | **不持久化** | Rust / Node 每次请求第三方 API |
 | 业务数据库（用户等） | MySQL 等（与「取播放链」无强绑定） | 略 |
 

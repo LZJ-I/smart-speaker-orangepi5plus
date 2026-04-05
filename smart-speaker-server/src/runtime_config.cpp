@@ -60,8 +60,8 @@ void write_default_config_if_missing(void)
         << "bind_ip = \"0.0.0.0\"\n"
         << "bind_port = 8888\n"
         << "\n"
-        << "# 兼容旧本地曲库扫描逻辑\n"
-        << "music_root = \"/var/www/html/music/\"\n"
+        << "# 本地曲库扫描根（相对 server 工作目录或绝对路径）\n"
+        << "music_root = \"data/music-library/\"\n"
         << "\n"
         << "# 兼容 Rust music-lib：未带 source 时默认平台；auto 顺序（单次 HTTP 3s、全程≤10s），all 并发（单次 HTTP 3s）\n"
         << "legacy_platform = \"auto\"\n"
@@ -127,7 +127,7 @@ ServerRuntimeConfig load_server_runtime_config(void)
     ServerRuntimeConfig cfg;
     cfg.bind_ip = "0.0.0.0";
     cfg.bind_port = 8888;
-    cfg.music_root = "/var/www/html/music/";
+    cfg.music_root = "data/music-library/";
     cfg.legacy_platform = "auto";
     cfg.legacy_quality = "320k";
     cfg.music_service_host = "127.0.0.1";
@@ -147,7 +147,7 @@ ServerRuntimeConfig load_server_runtime_config(void)
         cfg.bind_ip = "0.0.0.0";
     }
     if (cfg.music_root.empty()) {
-        cfg.music_root = "/var/www/html/music/";
+        cfg.music_root = "data/music-library/";
     }
     if (!cfg.music_root.empty() && cfg.music_root.back() != '/') {
         cfg.music_root.push_back('/');
