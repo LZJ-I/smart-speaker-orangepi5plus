@@ -18,9 +18,9 @@ fi
 user_message=$1
 
 # 执行脚本 ： 向qwen-plus模型发送请求
-{
-    echo "---- $(date -Iseconds) ----"
-    curl -sS -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
+# 注意：stdout 必须是纯 JSON（供 C 端 json-c 解析）；时间戳只写入 data/llm/curl.log
+echo "---- $(date -Iseconds) ----" >&3
+curl -sS -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
 -H "Authorization: Bearer $LLM_API_KEY" \
 -H "Content-Type: application/json" \
 -d '{
@@ -35,6 +35,5 @@ user_message=$1
             "content": "'"$user_message"'"
         }
     ]
-}'
-    echo ""
-} | tee /dev/fd/3
+}' | tee /dev/fd/3
+echo "" >&3

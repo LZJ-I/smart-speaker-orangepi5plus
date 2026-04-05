@@ -32,6 +32,12 @@ typedef enum {
     ERR_NO_CONTENT
 } ErrorCode;
 
+static const char *json_payload_start(const char *s)
+{
+    const char *p = strchr(s, '{');
+    return (p != NULL) ? p : s;
+}
+
 static const char* get_error_message(ErrorCode code) {
     switch (code) {
         case ERR_OK: return "成功";
@@ -145,7 +151,7 @@ int generate_llm_response(const char *question, char *response, size_t response_
     pclose(fp);
     LOGD(TAG, "收到响应，长度: %zu", total_read);
 
-    ErrorCode err = parse_json_response(json_response, response, response_len);
+    ErrorCode err = parse_json_response(json_payload_start(json_response), response, response_len);
 
     if (err != ERR_OK) {
         LOGE(TAG, "%s", get_error_message(err));
