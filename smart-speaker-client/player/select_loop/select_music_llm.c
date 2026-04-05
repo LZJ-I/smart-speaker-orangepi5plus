@@ -32,6 +32,7 @@ int try_music_lib_play(const char *text)
 {
     char query[256] = {0};
     char intro[512];
+    char offline_msg[384];
     Music_Node track;
     music_source_clear_online_search_blocked();
     if (!select_text_extract_music_query(text, query, sizeof(query))) {
@@ -40,6 +41,12 @@ int try_music_lib_play(const char *text)
     if (select_text_is_hot_generic_query(query)) {
         LOGI(TAG, "搜歌关键词: 热门");
         if (player_search_hot_random_prepare_for_tts(&track) != 0) {
+            if (g_current_online_mode == ONLINE_MODE_NO) {
+                snprintf(offline_msg, sizeof(offline_msg),
+                         "当前为离线模式，本地没有合适的歌曲，请尝试切换在线模式");
+                tts_play_text(offline_msg);
+                return 1;
+            }
             return 0;
         }
         format_voice_track_intro(&track, intro, sizeof(intro));
@@ -51,6 +58,12 @@ int try_music_lib_play(const char *text)
     if (player_search_insert_keyword_prepare_voice_intro(query, &track) != 0) {
         if (music_source_take_online_search_blocked()) {
             tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);
+            return 1;
+        }
+        if (g_current_online_mode == ONLINE_MODE_NO) {
+            snprintf(offline_msg, sizeof(offline_msg),
+                     "当前为离线模式，本地没有%s，请尝试切换在线模式", query);
+            tts_play_text(offline_msg);
             return 1;
         }
         return 0;

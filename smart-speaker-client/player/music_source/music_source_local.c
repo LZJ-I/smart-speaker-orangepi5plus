@@ -126,13 +126,42 @@ static void local_pick_singer(const char *relative_path, char *singer, size_t si
     }
 }
 
+static int utf8_is_de_zh(const char *p)
+{
+    if (p == NULL || p[0] == '\0' || p[1] == '\0' || p[2] == '\0') {
+        return 0;
+    }
+    return (unsigned char)p[0] == 0xe7 && (unsigned char)p[1] == 0x9a && (unsigned char)p[2] == 0x84;
+}
+
 static int local_match_keyword(const char *keyword, const MusicSourceItem *item)
 {
+    const char *sep;
     if (keyword == NULL || keyword[0] == '\0') return 1;
     if (strcmp(keyword, "热门") == 0) return 1;
     if (strstr(item->song_name, keyword) != NULL) return 1;
     if (strstr(item->singer, keyword) != NULL) return 1;
     if (strstr(item->song_id, keyword) != NULL) return 1;
+    for (sep = strstr(keyword, "的"); sep != NULL; sep = strstr(sep + 3, "的")) {
+        if (sep != keyword && utf8_is_de_zh(sep) && sep[3] != '\0') {
+            char left[256];
+            char right[256];
+            size_t left_len = (size_t)(sep - keyword);
+            if (left_len < sizeof(left)) {
+                memcpy(left, keyword, left_len);
+                left[left_len] = '\0';
+                local_copy_text(right, sizeof(right), sep + 3);
+                local_trim_spaces(left);
+                local_trim_spaces(right);
+                if (strlen(left) >= 2 && strlen(right) >= 2) {
+                    if ((strstr(item->singer, left) != NULL && strstr(item->song_name, right) != NULL) ||
+                        (strstr(item->singer, right) != NULL && strstr(item->song_name, left) != NULL)) {
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
     return 0;
 }
 

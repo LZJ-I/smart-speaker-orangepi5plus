@@ -563,7 +563,7 @@ int socket_connect(void)
     int ret = socket_init();
     if (ret != 0) {
         LOGE(TAG, "连接服务器失败，无法切换在线模式");
-        tts_play_text("连接服务器失败，切换在线模式失败");
+        tts_play_text("连接服务器失败。");
         return -1;
     }
     return 0;
