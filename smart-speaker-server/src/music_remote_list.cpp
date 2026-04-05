@@ -82,7 +82,6 @@ bool music_remote_list_music_page(const std::string &keyword, int page, int page
             if (url != NULL) {
                 music_free_string(url);
             }
-            continue;
         }
         music.append(item);
     }

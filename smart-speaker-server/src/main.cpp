@@ -1,4 +1,5 @@
 #include "server.h"
+#include "app_log.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -33,6 +34,7 @@ int server_bind_port(void)
 
 int main()
 {
+    app_log_init("server");
     Server server;
     if (!server.initialized_ok()) {
         std::cerr << "服务端初始化失败：请根据上方 [MySQL] 提示创建库/用户或检查 mysqld。" << std::endl;

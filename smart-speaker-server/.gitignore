@@ -1,3 +1,6 @@
+# runtime
+data/
+
 # build
 server_smart_speaker
 src/*.o

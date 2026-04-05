@@ -1,4 +1,6 @@
 #include "server.h"
+#include "app_log.h"
+#include "music_downloader.h"
 #include "music_remote_list.h"
 
 #include <algorithm>
@@ -434,8 +436,19 @@ void Server::read_cb(struct bufferevent *bev, void *ctx)
         s->debug("[消息类型] 嵌入式端获取音乐列表");
         s->server_get_music(bev, root);
     } else if (cmd == "list_music") {
-        s->debug("[消息类型] 音乐列表(伪随机分页)");
+        {
+            std::string kw = json_string_or_empty(root, "keyword");
+            trim_keyword(kw);
+            if (kw.empty() || music_remote_keyword_is_vague(kw)) {
+                s->debug("[消息类型] list_music 本地伪随机分页");
+            } else {
+                s->debug("[消息类型] list_music 关键词[%s]", kw.c_str());
+            }
+        }
         s->server_list_music(bev, root);
+    } else if (cmd == "get_play_url") {
+        s->debug("[消息类型] get_play_url");
+        s->server_get_play_url(bev, root);
     } else if (cmd == "search_music") {
         s->debug("[消息类型] 搜索音乐");
         s->server_search_music(bev, root);
@@ -604,6 +617,38 @@ bool Server::server_search_music(struct bufferevent *bev, const Json::Value &roo
     return ok;
 }
 
+bool Server::server_get_play_url(struct bufferevent *bev, const Json::Value &root)
+{
+    Json::Value reply(Json::objectValue);
+    reply["cmd"] = "reply_get_play_url";
+    if (!json_has_string(root, "source") || !json_has_string(root, "song_id")) {
+        reply["result"] = "fail";
+        return server_send_data(bev, reply);
+    }
+    std::string src = json_string_or_empty(root, "source");
+    std::string sid = json_string_or_empty(root, "song_id");
+    if (src.empty() || sid.empty()) {
+        reply["result"] = "fail";
+        return server_send_data(bev, reply);
+    }
+    const char *qual = getenv("SMART_SPEAKER_MUSIC_QUALITY");
+    if (qual == NULL || qual[0] == '\0') {
+        qual = "128k";
+    }
+    char *url = music_get_url(src.c_str(), sid.c_str(), qual);
+    if (url != NULL && url[0] != '\0') {
+        reply["result"] = "ok";
+        reply["play_url"] = std::string(url);
+        music_free_string(url);
+    } else {
+        reply["result"] = "fail";
+        if (url != NULL) {
+            music_free_string(url);
+        }
+    }
+    return server_send_data(bev, reply);
+}
+
 bool Server::server_list_music(struct bufferevent *bev, const Json::Value &root)
 {
     Json::Value reply(Json::objectValue);
@@ -757,4 +802,5 @@ void Server::debug(const char *s, ...)
     char time_buf[64] = {0};
     strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", localtime(&t));
     std::cout << "[" << time_buf << "] " << buf << std::endl;
+    app_log_emit(time_buf, buf);
 }

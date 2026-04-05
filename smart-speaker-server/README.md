@@ -113,9 +113,12 @@ make stop
 
 初始化失败（连不上 MySQL 等）时进程退出码为 1。
 
+在 **`smart-speaker-server` 当前工作目录**下启动时，标准输出与 **`data/server/app.log`** 会同步写入同一套运行日志（`data/` 已加入 `.gitignore`）。
+
 ## 协议要点
 
-TCP：4 字节小端长度 + UTF-8 JSON。支持 `get_music`、`search_music`、`list_music`、`device_report`、各类 `app_*` 等（见 `src/server.cpp`）。
+TCP：4 字节小端长度 + UTF-8 JSON。支持 `get_music`、`search_music`、`list_music`、`get_play_url`、`device_report`、各类 `app_*` 等（见 `src/server.cpp`）。
 
-- **`list_music`**：可选字段 **`keyword`**。未传、`keyword` 为空或与泛意图同义（如 **`热门`**、`听歌`、`音乐` 等）时，返回**本地曲库**随机打乱后的分页；否则由 **`music-lib`** 走 QQ/网易云聚合搜索，并在每条结果中填充 **`play_url`**（及 `source`/`song_id`/`singer`/`song`）。远程失败或无可播链时回退为本地路径扫描关键词分页（与 `search_music` 类似）。
+- **`list_music`**：可选字段 **`keyword`**。未传、`keyword` 为空或与泛意图同义（如 **`热门`**、`听歌`、`音乐` 等）时，返回**本地曲库**随机打乱后的分页；否则由 **`music-lib`** 走 QQ/网易云聚合搜索；每条结果含 `source`/`song_id`/`singer`/`song`，**`play_url` 在取链成功时填充**（失败时仍返回条目，由嵌入式端再通过 **`get_play_url`** 按需取链）。远程失败或结果为空时回退为本地路径扫描关键词分页（与 `search_music` 类似）。
+- **`get_play_url`**：字段 **`source`**、**`song_id`**，响应 **`reply_get_play_url`**，`result` 为 `ok` 时含 **`play_url`**（供 `tx`/`wy` 等与 Apache 路径无关的曲目）。
 - **`search_music`**：仍表示仅扫本地磁盘路径的关键词分页。
