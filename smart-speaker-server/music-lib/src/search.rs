@@ -1,7 +1,17 @@
 //! 搜索模块 - 负责从各音乐平台搜索歌曲
-use serde::Deserialize;
 use reqwest::blocking::Client;
+use serde::Deserialize;
 use std::vec::Vec;
+
+const HTTP_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+
+fn http_client() -> Result<Client, String> {
+    Client::builder()
+        .user_agent(HTTP_USER_AGENT)
+        .build()
+        .map_err(|e| e.to_string())
+}
 
 /// 支持的搜索平台
 const SUPPORTED_SEARCH_PLATFORMS: &[&str] = &["tx", "wy", "auto"];
@@ -106,18 +116,18 @@ struct NeteaseMusicAlbum {
 pub fn search_qq_music_paged(keyword: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
     let page = if page == 0 { 1 } else { page };
     let page_size = if page_size == 0 { 10 } else { page_size };
+    let w = urlencoding::encode(keyword);
     let url = format!(
         "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w={}&p={}&n={}",
-        keyword, page, page_size
+        w, page, page_size
     );
-    
-    let resp = Client::new()
-        .get(&url)
-        .send()
-        .map_err(|e| e.to_string())?
-        .text()
-        .map_err(|e| e.to_string())?;
-    
+
+    let resp = http_client()?.get(&url).send().map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("QQ 音乐搜索 HTTP {}", resp.status()));
+    }
+    let resp = resp.text().map_err(|e| e.to_string())?;
+
     let json_str = resp.trim_start_matches("callback(").trim_end_matches(")");
     
     let qq_resp: QQMusicResponse = serde_json::from_str(json_str)
@@ -158,17 +168,21 @@ pub fn search_netease_music_paged(keyword: &str, page: u32, page_size: u32) -> R
     let page = if page == 0 { 1 } else { page };
     let page_size = if page_size == 0 { 10 } else { page_size };
     let offset = (page - 1) * page_size;
+    let s = urlencoding::encode(keyword);
     let url = format!(
         "https://music.163.com/api/search/get/?s={}&type=1&limit={}&offset={}",
-        keyword, page_size, offset
+        s, page_size, offset
     );
-    
-    let resp = Client::new()
+
+    let resp = http_client()?
         .get(&url)
+        .header("Referer", "https://music.163.com/")
         .send()
-        .map_err(|e| e.to_string())?
-        .json::<NeteaseMusicResponse>()
         .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("网易云搜索 HTTP {}", resp.status()));
+    }
+    let resp = resp.json::<NeteaseMusicResponse>().map_err(|e| e.to_string())?;
     
     let mut songs = Vec::new();
     let mut total = 0usize;
@@ -232,9 +246,9 @@ pub fn search_music_paged(keyword: &str, platform: &str, page: u32, page_size: u
         "tx" => search_qq_music_paged(keyword, page, page_size),
         "wy" => search_netease_music_paged(keyword, page, page_size),
         "auto" => {
-            match search_qq_music_paged(keyword, page, page_size) {
+            match search_netease_music_paged(keyword, page, page_size) {
                 Ok(ret) if !ret.songs.is_empty() => Ok(ret),
-                _ => search_netease_music_paged(keyword, page, page_size),
+                _ => search_qq_music_paged(keyword, page, page_size),
             }
         }
         _ => unreachable!("平台验证已通过"),

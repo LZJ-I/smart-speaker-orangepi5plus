@@ -34,7 +34,7 @@ sudo apt install -y \
 - **Rust**：建议 `rustup` 安装 stable（需支持 `edition = "2024"` 的 toolchain，或把 `music-lib/Cargo.toml` 中 `edition` 改为 `2021`）。
 - **OpenSSL**：`music-lib` 依赖 `openssl-sys`（`libssl-dev` 已覆盖）。
 - **环境变量**（可选）：
-  - `SMART_SPEAKER_MUSIC_PLATFORM`：搜索平台，`auto`（默认）/`tx`/`wy`
+  - `SMART_SPEAKER_MUSIC_PLATFORM`：搜索平台，`auto`（默认，**优先网易云再 QQ**）/`tx`/`wy`。当前环境下 QQ 公开搜索接口常返回 **HTTP 500**，若强制 `tx` 会导致搜不到，建议用 **`wy` 或 `auto`**。
   - `SMART_SPEAKER_MUSIC_QUALITY`：取链音质，默认 `128k`
 
 **运行 `server_smart_speaker` 时**需能加载同目录相对路径下的 `music-lib/target/release/libmusic_downloader.so`（Makefile 已设置 `rpath`）；若移动可执行文件，请同步拷贝 `.so` 或设置 `LD_LIBRARY_PATH`。

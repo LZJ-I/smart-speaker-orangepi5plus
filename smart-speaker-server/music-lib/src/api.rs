@@ -109,7 +109,12 @@ pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<Strin
     
     let url = format!("{}/url?source={}&songId={}&quality={}", API_URL, source, song_id, quality);
     
-    let resp = Client::new()
+    let resp = Client::builder()
+        .user_agent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        )
+        .build()
+        .map_err(|e| e.to_string())?
         .get(&url)
         .header("X-API-Key", API_KEY)
         .send()
