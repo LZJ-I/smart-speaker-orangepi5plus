@@ -119,6 +119,6 @@ make stop
 
 TCP：4 字节小端长度 + UTF-8 JSON。支持 `get_music`、`search_music`、`list_music`、`get_play_url`、`device_report`、各类 `app_*` 等（见 `src/server.cpp`）。
 
-- **`list_music`**：可选字段 **`keyword`**。未传、`keyword` 为空或与泛意图同义（如 **`热门`**、`听歌`、`音乐` 等）时，返回**本地曲库**随机打乱后的分页；否则由 **`music-lib`** 走 QQ/网易云聚合搜索；每条结果含 `source`/`song_id`/`singer`/`song`，**`play_url` 在取链成功时填充**（失败时仍返回条目，由嵌入式端再通过 **`get_play_url`** 按需取链）。远程失败或结果为空时回退为本地路径扫描关键词分页（与 `search_music` 类似）。
+- **`list_music`**：可选字段 **`keyword`**。未传、`keyword` 为空或与泛意图同义（如 **`热门`**、`听歌`、`音乐` 等）时，返回**本地曲库**随机打乱后的分页；否则由 **`music-lib`** 走 QQ/网易云聚合搜索，每条结果含 `source`/`song_id`/`singer`/`song`（**不在此接口内批量取 `play_url`**，避免耗时超过客户端短连接超时；起播时由嵌入式端 **`get_play_url`** 或节点内已有直链解析）。远程失败或结果为空时回退为本地路径扫描关键词分页（与 `search_music` 类似）。
 - **`get_play_url`**：字段 **`source`**、**`song_id`**，响应 **`reply_get_play_url`**，`result` 为 `ok` 时含 **`play_url`**（供 `tx`/`wy` 等与 Apache 路径无关的曲目）。
 - **`search_music`**：仍表示仅扫本地磁盘路径的关键词分页。

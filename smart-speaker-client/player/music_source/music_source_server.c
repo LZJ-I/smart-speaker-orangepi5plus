@@ -228,7 +228,7 @@ static int server_connect_once(void)
         return -1;
     }
     {
-        struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
+        struct timeval tv = {.tv_sec = 30, .tv_usec = 0};
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     }
