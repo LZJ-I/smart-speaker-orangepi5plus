@@ -367,7 +367,7 @@ pub extern "C" fn music_search_first_url(
 /// 
 /// # 参数
 /// - keyword: 搜索关键词
-/// - platform: 平台 ("tx" 为 QQ 音乐, "wy" 为网易云音乐, "auto" 自动选择)
+/// - platform: 平台 ("tx" 为 QQ 音乐, "wy" 为网易云音乐, "auto" 优先 QQ 再网易云)
 /// - result: 搜索结果输出指针
 /// 
 /// # 返回
