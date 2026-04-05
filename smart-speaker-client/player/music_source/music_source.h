@@ -19,6 +19,7 @@ typedef struct {
     int total;
     int total_pages;
     int current_page;
+    char online_search_disabled;
 } MusicSourceResult;
 
 typedef struct {
@@ -31,5 +32,8 @@ typedef struct {
 int music_source_search(const char *keyword, int page, int page_size, MusicSourceResult *result);
 int music_source_get_url(const char *source, const char *song_id, char *url_buf, size_t url_size);
 void music_source_free_result(MusicSourceResult *result);
+void music_source_clear_online_search_blocked(void);
+void music_source_set_online_search_blocked(int blocked);
+int music_source_take_online_search_blocked(void);
 
 #endif

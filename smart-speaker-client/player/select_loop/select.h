@@ -20,4 +20,5 @@ void select_on_player_stopped(void);
 
 // 语音合成：xxx
 void tts_play_text(char * text);
+void tts_play_audio_file(const char *path);
 #endif

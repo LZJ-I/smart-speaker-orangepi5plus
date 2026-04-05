@@ -4,13 +4,17 @@
 #include "player.h"
 #include "select.h"
 #include "debug_log.h"
+#include "music_source.h"
 #include "voice-assistant/llm/llm.h"
 
 #define TAG "SELECT"
 
+static const char *ONLINE_MUSIC_UNSUPPORTED_WAV = "./assets/tts/online_music_unsupported.wav";
+
 int try_music_lib_play(const char *text)
 {
     char query[256] = {0};
+    music_source_clear_online_search_blocked();
     if (!select_text_extract_music_query(text, query, sizeof(query))) {
         return 0;
     }
@@ -19,7 +23,14 @@ int try_music_lib_play(const char *text)
         return (player_search_and_play_hot_random() == 0) ? 1 : 0;
     }
     LOGI(TAG, "搜歌关键词: %s", query);
-    return (player_search_insert_keyword_and_play(query) == 0) ? 1 : 0;
+    if (player_search_insert_keyword_and_play(query) == 0) {
+        return 1;
+    }
+    if (music_source_take_online_search_blocked()) {
+        tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);
+        return 1;
+    }
+    return 0;
 }
 
 int run_llm_and_tts(const char *raw_text)

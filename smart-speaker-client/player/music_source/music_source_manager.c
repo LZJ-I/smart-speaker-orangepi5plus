@@ -6,6 +6,25 @@
 
 #include "player.h"
 
+static int g_online_search_blocked;
+
+void music_source_clear_online_search_blocked(void)
+{
+    g_online_search_blocked = 0;
+}
+
+void music_source_set_online_search_blocked(int blocked)
+{
+    g_online_search_blocked = blocked ? 1 : 0;
+}
+
+int music_source_take_online_search_blocked(void)
+{
+    int x = g_online_search_blocked;
+    g_online_search_blocked = 0;
+    return x;
+}
+
 static const MusicSourceBackend *select_backend_by_source(const char *source)
 {
     if (source != NULL && strcmp(source, "server") == 0) {
@@ -25,6 +44,9 @@ int music_source_search(const char *keyword, int page, int page_size, MusicSourc
     fallback = (primary == music_source_server_backend()) ? music_source_local_backend() : NULL;
 
     ret = primary->search(keyword, page, page_size, result);
+    if (ret == 0 && result->online_search_disabled) {
+        return 0;
+    }
     if (ret == 0 && result->count > 0) {
         return 0;
     }

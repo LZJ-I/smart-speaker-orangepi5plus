@@ -228,7 +228,7 @@ static int server_connect_once(void)
         return -1;
     }
     {
-        struct timeval tv = {.tv_sec = 30, .tv_usec = 0};
+        struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     }
@@ -375,6 +375,12 @@ static int music_source_server_search(const char *keyword, int page, int page_si
     }
     result->current_page = page;
 
+    if (json_object_object_get_ex(root, "online_search_enabled", &value)) {
+        if (json_object_get_type(value) == json_type_boolean && !json_object_get_boolean(value)) {
+            result->online_search_disabled = 1;
+        }
+    }
+
     if (!json_object_object_get_ex(root, "music", &music) || !json_object_is_type(music, json_type_array)) {
         ret = 0;
         goto done;
@@ -433,6 +439,12 @@ static int server_fetch_play_url(const char *source, const char *song_id, char *
     root = json_tokener_parse(payload);
     if (root == NULL) {
         goto done;
+    }
+    if (json_object_object_get_ex(root, "result", &value)) {
+        const char *rs = json_object_get_string(value);
+        if (rs != NULL && strcmp(rs, "disabled") == 0) {
+            goto done;
+        }
     }
     if (!json_object_object_get_ex(root, "result", &value) || strcmp(json_object_get_string(value), "ok") != 0) {
         goto done;

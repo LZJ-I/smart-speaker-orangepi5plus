@@ -119,6 +119,7 @@ make
 | `SMART_SPEAKER_SERVER_IP` | server TCP / 曲库请求的 IP | `player_constants.h` 中 `SERVER_IP`（当前为 `127.0.0.1`） |
 | `SMART_SPEAKER_SERVER_PORT` | server TCP 端口 | `player_constants.h` 中 `SERVER_PORT`（当前为 `8888`）；非法字符串则回退该宏 |
 | `SMART_SPEAKER_SERVER_MUSIC_BASE_URL` | 在线歌曲 HTTP URL 前缀（`+ path`） | 未设置时由实现按当前选用的 IP 拼为 `http://<该 IP>/music/`；头文件中另有 `SERVER_MUSIC_BASE_URL` 宏与之一致 |
+| （部署在 **server** 上）`SMART_SPEAKER_MUSIC_API_KEY` | 第三方音源取链 Key；**未设置则精准在线搜歌关闭**，`list_music` 返回 `online_search_enabled=false`，player 播报 `./assets/tts/online_music_unsupported.wav` | 无（须自行 export） |
 | `SMART_SPEAKER_PLAYER_MODE` | 设为 `offline`（大小写不敏感）时强制离线：不建 TCP 长连、并通知 ASR/KWS 离线；其它或未设视为在线 | 在线 |
 | `SMART_SPEAKER_GST_ALSA_DEVICE` | 传给 GStreamer `alsasink` 的 device 字符串 | `dmix:CARD=rockchipes8388,DEV=0` |
 

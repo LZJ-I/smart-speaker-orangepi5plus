@@ -13,4 +13,5 @@ cd voice-assistant/tts/example || exit 1
 ./tts_test -t "已切换到顺序播放模式" -o "$ROOT/assets/tts/mode_order.wav"
 ./tts_test -t "已切换到单娶循环模式" -o "$ROOT/assets/tts/mode_single.wav"
 ./tts_test -t "我没有理解您的意思，请换个说法吧。" -o "$ROOT/assets/tts/fallback_unmatched.wav"
-echo "已生成 assets/tts/mode_order.wav、assets/tts/mode_single.wav、assets/tts/fallback_unmatched.wav"
+./tts_test -t "在线搜歌功能尚未配置，暂不支持。" -o "$ROOT/assets/tts/online_music_unsupported.wav"
+echo "已生成 assets/tts/mode_order.wav、assets/tts/mode_single.wav、assets/tts/fallback_unmatched.wav、assets/tts/online_music_unsupported.wav"

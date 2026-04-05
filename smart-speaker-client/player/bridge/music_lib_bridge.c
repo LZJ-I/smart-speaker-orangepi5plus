@@ -73,6 +73,9 @@ int music_lib_insert_search_after_current(const char *keyword, int page, int pag
         return -1;
     }
     if (result.count <= 0) {
+        if (result.online_search_disabled) {
+            music_source_set_online_search_blocked(1);
+        }
         music_source_free_result(&result);
         return -1;
     }
