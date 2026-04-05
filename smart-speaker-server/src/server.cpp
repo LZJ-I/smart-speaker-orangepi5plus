@@ -1,4 +1,5 @@
 #include "server.h"
+#include "music_remote_list.h"
 
 #include <algorithm>
 #include <arpa/inet.h>
@@ -264,6 +265,62 @@ void ensure_list_music_cache(void)
         std::shuffle(g_list_music_cache.begin(), g_list_music_cache.end(), std::default_random_engine(random_seed));
     }
     g_list_music_cache_ready = true;
+}
+
+static void trim_keyword(std::string &kw)
+{
+    while (!kw.empty() && (kw.front() == ' ' || kw.front() == '\t' || kw.front() == '\n' || kw.front() == '\r')) {
+        kw.erase(kw.begin());
+    }
+    while (!kw.empty() && (kw.back() == ' ' || kw.back() == '\t' || kw.back() == '\n' || kw.back() == '\r')) {
+        kw.pop_back();
+    }
+}
+
+static void fill_list_music_from_local_cache(Json::Value &music, int page, int page_size, int &total,
+                                             int &total_pages)
+{
+    int start;
+    int end;
+    ensure_list_music_cache();
+    const std::vector<MusicFileInfo> &matches = g_list_music_cache;
+    total = static_cast<int>(matches.size());
+    total_pages = (total == 0) ? 0 : ((total + page_size - 1) / page_size);
+    start = (page - 1) * page_size;
+    end = std::min(start + page_size, total);
+    music = Json::Value(Json::arrayValue);
+    if (start < total) {
+        for (int i = start; i < end; ++i) {
+            Json::Value item(Json::objectValue);
+            item["singer"] = matches[i].singer;
+            item["song"] = matches[i].song;
+            item["path"] = matches[i].path;
+            music.append(item);
+        }
+    }
+}
+
+static void fill_list_music_from_local_keyword(const std::string &keyword, Json::Value &music, int page,
+                                               int page_size, int &total, int &total_pages)
+{
+    int start;
+    int end;
+    std::vector<MusicFileInfo> matches;
+    collect_music_by_keyword(keyword, matches);
+    total = static_cast<int>(matches.size());
+    total_pages = (total == 0) ? 0 : ((total + page_size - 1) / page_size);
+    start = (page - 1) * page_size;
+    end = std::min(start + page_size, total);
+    music = Json::Value(Json::arrayValue);
+    if (start < total) {
+        for (int i = start; i < end; ++i) {
+            Json::Value item(Json::objectValue);
+            item["singer"] = matches[i].singer;
+            item["song"] = matches[i].song;
+            item["path"] = matches[i].path;
+            music.append(item);
+        }
+    }
 }
 
 }  // namespace
@@ -553,10 +610,9 @@ bool Server::server_list_music(struct bufferevent *bev, const Json::Value &root)
     Json::Value music(Json::arrayValue);
     int page = 1;
     int page_size = DEFAULT_PAGE_SIZE;
-    int total;
-    int total_pages;
-    int start;
-    int end;
+    int total = 0;
+    int total_pages = 0;
+    std::string keyword;
 
     if (json_has_int(root, "page")) {
         page = json_int_or_default(root, "page", page);
@@ -569,20 +625,20 @@ bool Server::server_list_music(struct bufferevent *bev, const Json::Value &root)
     if (page_size <= 0)
         page_size = DEFAULT_PAGE_SIZE;
 
-    ensure_list_music_cache();
-    const std::vector<MusicFileInfo> &matches = g_list_music_cache;
-    total = static_cast<int>(matches.size());
-    total_pages = (total == 0) ? 0 : ((total + page_size - 1) / page_size);
-    start = (page - 1) * page_size;
-    end = std::min(start + page_size, total);
+    keyword = json_string_or_empty(root, "keyword");
+    trim_keyword(keyword);
 
-    if (start < total) {
-        for (int i = start; i < end; ++i) {
-            Json::Value item(Json::objectValue);
-            item["singer"] = matches[i].singer;
-            item["song"] = matches[i].song;
-            item["path"] = matches[i].path;
-            music.append(item);
+    if (keyword.empty() || music_remote_keyword_is_vague(keyword)) {
+        fill_list_music_from_local_cache(music, page, page_size, total, total_pages);
+    } else {
+        int remote_total = 0;
+        int remote_tp = 0;
+        if (music_remote_list_music_page(keyword, page, page_size, music, remote_total, remote_tp) &&
+            music.size() > 0) {
+            total = remote_total;
+            total_pages = remote_tp;
+        } else {
+            fill_list_music_from_local_keyword(keyword, music, page, page_size, total, total_pages);
         }
     }
 

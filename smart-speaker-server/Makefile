@@ -2,6 +2,9 @@ CXX = g++
 INCLUDES = -Iinclude
 CXXFLAGS = -Wall -std=c++11 $(INCLUDES)
 
+MUSIC_LIB_DIR = music-lib/target/release
+MUSIC_LIB_SO = $(MUSIC_LIB_DIR)/libmusic_downloader.so
+
 EVENT_CFLAGS := $(shell pkg-config --cflags libevent 2>/dev/null)
 EVENT_LIBS := $(shell pkg-config --libs libevent 2>/dev/null)
 JSON_CFLAGS := $(shell pkg-config --cflags jsoncpp 2>/dev/null)
@@ -20,18 +23,24 @@ MYSQL_LIBS = -lmysqlclient
 endif
 
 CXXFLAGS += $(EVENT_CFLAGS) $(JSON_CFLAGS) $(MYSQL_CFLAGS)
-LIBS = $(EVENT_LIBS) $(JSON_LIBS) $(MYSQL_LIBS) -lcrypto
+LIBS = -L$(MUSIC_LIB_DIR) -lmusic_downloader $(EVENT_LIBS) $(JSON_LIBS) $(MYSQL_LIBS) -lcrypto -ldl -pthread
+RPATH = -Wl,-rpath,'$$ORIGIN/$(MUSIC_LIB_DIR)'
 
 TARGET = server_smart_speaker
-SRCS = src/main.cpp src/server.cpp src/database.cpp src/player.cpp
+SRCS = src/main.cpp src/server.cpp src/database.cpp src/player.cpp src/music_remote_list.cpp
 OBJS = $(SRCS:.cpp=.o)
 
-.PHONY: all clean tests stop
+.PHONY: all clean tests stop music-lib
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) $(LIBS)
+music-lib:
+	cd music-lib && cargo build --release
+
+$(MUSIC_LIB_SO): music-lib
+
+$(TARGET): $(MUSIC_LIB_SO) $(OBJS)
+	$(CXX) $(CXXFLAGS) $(RPATH) -o $@ $(OBJS) $(LIBS)
 
 src/%.o: src/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@

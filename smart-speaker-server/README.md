@@ -20,10 +20,24 @@ sudo apt install -y \
   libevent-dev \
   libjsoncpp-dev \
   default-libmysqlclient-dev \
-  libssl-dev
+  libssl-dev \
+  pkg-config \
+  cargo
 ```
 
 若无 `default-libmysqlclient-dev`：`sudo apt install -y libmysqlclient-dev`
+
+### Rust（music-lib）
+
+聚合搜歌与取流 URL 使用仓库内 **`music-lib/`**（Rust crate `music_downloader`，产出 `libmusic_downloader.so`）。`make` 时会自动执行 `cargo build --release`。
+
+- **Rust**：建议 `rustup` 安装 stable（需支持 `edition = "2024"` 的 toolchain，或把 `music-lib/Cargo.toml` 中 `edition` 改为 `2021`）。
+- **OpenSSL**：`music-lib` 依赖 `openssl-sys`（`libssl-dev` 已覆盖）。
+- **环境变量**（可选）：
+  - `SMART_SPEAKER_MUSIC_PLATFORM`：搜索平台，`auto`（默认）/`tx`/`wy`
+  - `SMART_SPEAKER_MUSIC_QUALITY`：取链音质，默认 `128k`
+
+**运行 `server_smart_speaker` 时**需能加载同目录相对路径下的 `music-lib/target/release/libmusic_downloader.so`（Makefile 已设置 `rpath`）；若移动可执行文件，请同步拷贝 `.so` 或设置 `LD_LIBRARY_PATH`。
 
 ## 运行期
 
@@ -80,7 +94,7 @@ make
 make tests   # 可选
 ```
 
-链接：`libevent`、`libjsoncpp`、`libmysqlclient`、`crypto`。
+链接：`libevent`、`libjsoncpp`、`libmysqlclient`、`crypto`、`libmusic_downloader`（Rust 构建）、`pthread`、`dl`。
 
 ## 运行
 
@@ -101,4 +115,7 @@ make stop
 
 ## 协议要点
 
-TCP：4 字节小端长度 + UTF-8 JSON。支持 `get_music`、`search_music`、`device_report`、各类 `app_*` 等（见 `src/server.cpp`）。`search_music` 的关键词 **`热门`** 表示全库匹配并随机打乱后分页（与 client 本地后端语义一致）。
+TCP：4 字节小端长度 + UTF-8 JSON。支持 `get_music`、`search_music`、`list_music`、`device_report`、各类 `app_*` 等（见 `src/server.cpp`）。
+
+- **`list_music`**：可选字段 **`keyword`**。未传、`keyword` 为空或与泛意图同义（如 **`热门`**、`听歌`、`音乐` 等）时，返回**本地曲库**随机打乱后的分页；否则由 **`music-lib`** 走 QQ/网易云聚合搜索，并在每条结果中填充 **`play_url`**（及 `source`/`song_id`/`singer`/`song`）。远程失败或无可播链时回退为本地路径扫描关键词分页（与 `search_music` 类似）。
+- **`search_music`**：仍表示仅扫本地磁盘路径的关键词分页。
