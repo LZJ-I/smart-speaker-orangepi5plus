@@ -10,6 +10,24 @@
 
 #define TAG "MUSIC-LIB"
 
+int music_lib_resolve_insert_one_after_current(const char *keyword)
+{
+    MusicSourceItem item;
+    Music_Node *anchor;
+
+    if (keyword == NULL || keyword[0] == '\0') {
+        return -1;
+    }
+    if (music_source_server_resolve_keyword(keyword, &item) != 0) {
+        return -1;
+    }
+    anchor = link_anchor_for_insert();
+    if (anchor == NULL) {
+        return -1;
+    }
+    return link_insert_node_after(anchor, item.source, item.song_id, item.singer, item.song_name, item.play_url);
+}
+
 #define OFFLINE_LOAD_PAGE 2048
 
 int music_lib_search_fill_list(const char *keyword, int max_count)

@@ -664,11 +664,13 @@ int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_
     if (keyword == NULL || keyword[0] == '\0') {
         return -1;
     }
-    if (music_lib_insert_search_after_current(keyword, 1, g_playlist_ctx.page_size, &n) != 0 || n <= 0) {
-        return -1;
+    if (!(g_current_online_mode == ONLINE_MODE_YES && music_lib_resolve_insert_one_after_current(keyword) == 0)) {
+        if (music_lib_insert_search_after_current(keyword, 1, g_playlist_ctx.page_size, &n) != 0 || n <= 0) {
+            return -1;
+        }
+        copy_text(g_playlist_ctx.keyword, sizeof(g_playlist_ctx.keyword), keyword);
+        g_playlist_ctx.current_page = 1;
     }
-    copy_text(g_playlist_ctx.keyword, sizeof(g_playlist_ctx.keyword), keyword);
-    g_playlist_ctx.current_page = 1;
 
     memset(&next_song, 0, sizeof(next_song));
     shm_get(&s);

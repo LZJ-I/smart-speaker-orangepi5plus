@@ -5,5 +5,6 @@
 
 const MusicSourceBackend *music_source_local_backend(void);
 const MusicSourceBackend *music_source_server_backend(void);
+int music_source_server_resolve_keyword(const char *keyword, MusicSourceItem *out_item);
 
 #endif

@@ -496,6 +496,98 @@ static void music_source_server_free_result(MusicSourceResult *result)
     server_result_reset(result);
 }
 
+int music_source_server_resolve_keyword(const char *keyword, MusicSourceItem *out_item)
+{
+    int fd;
+    int ret = -1;
+    char *payload = NULL;
+    json_object *request = NULL;
+    json_object *root = NULL;
+    json_object *value = NULL;
+    const char *cmd_s;
+    const char *rs;
+
+    if (keyword == NULL || keyword[0] == '\0' || out_item == NULL) {
+        return -1;
+    }
+    memset(out_item, 0, sizeof(*out_item));
+    fd = server_connect_once();
+    if (fd < 0) {
+        return -1;
+    }
+    request = json_object_new_object();
+    json_object_object_add(request, "cmd", json_object_new_string("resolve_music"));
+    json_object_object_add(request, "keyword", json_object_new_string(keyword));
+    if (server_send_request(fd, request) != 0) {
+        goto done;
+    }
+    if (server_recv_response(fd, &payload) != 0) {
+        goto done;
+    }
+    root = json_tokener_parse(payload);
+    if (root == NULL) {
+        goto done;
+    }
+    if (!json_object_object_get_ex(root, "cmd", &value)) {
+        goto done;
+    }
+    cmd_s = json_object_get_string(value);
+    if (cmd_s == NULL || strcmp(cmd_s, "reply_resolve_music") != 0) {
+        goto done;
+    }
+    if (!json_object_object_get_ex(root, "result", &value)) {
+        goto done;
+    }
+    rs = json_object_get_string(value);
+    if (rs != NULL && strcmp(rs, "disabled") == 0) {
+        music_source_set_online_search_blocked(1);
+        goto done;
+    }
+    if (rs == NULL || strcmp(rs, "ok") != 0) {
+        goto done;
+    }
+    if (!json_object_object_get_ex(root, "play_url", &value)) {
+        goto done;
+    }
+    server_copy_text(out_item->play_url, sizeof(out_item->play_url), json_object_get_string(value));
+    if (out_item->play_url[0] == '\0') {
+        goto done;
+    }
+    if (json_object_object_get_ex(root, "source", &value)) {
+        server_copy_text(out_item->source, sizeof(out_item->source), json_object_get_string(value));
+    }
+    if (json_object_object_get_ex(root, "song_id", &value)) {
+        server_copy_text(out_item->song_id, sizeof(out_item->song_id), json_object_get_string(value));
+    }
+    if (json_object_object_get_ex(root, "singer", &value)) {
+        server_copy_text(out_item->singer, sizeof(out_item->singer), json_object_get_string(value));
+    }
+    if (json_object_object_get_ex(root, "song", &value)) {
+        server_copy_text(out_item->song_name, sizeof(out_item->song_name), json_object_get_string(value));
+    }
+    if (out_item->song_name[0] == '\0') {
+        server_copy_text(out_item->song_name, sizeof(out_item->song_name), keyword);
+    }
+    if (out_item->song_id[0] == '\0') {
+        server_copy_text(out_item->song_id, sizeof(out_item->song_id), out_item->song_name);
+    }
+    if (out_item->source[0] == '\0') {
+        server_copy_text(out_item->source, sizeof(out_item->source), "server");
+    }
+    ret = 0;
+
+done:
+    if (request != NULL) {
+        json_object_put(request);
+    }
+    if (root != NULL) {
+        json_object_put(root);
+    }
+    free(payload);
+    close(fd);
+    return ret;
+}
+
 const MusicSourceBackend *music_source_server_backend(void)
 {
     static const MusicSourceBackend backend = {
