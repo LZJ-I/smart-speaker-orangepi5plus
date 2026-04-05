@@ -134,6 +134,50 @@ static int utf8_is_de_zh(const char *p)
     return (unsigned char)p[0] == 0xe7 && (unsigned char)p[1] == 0x9a && (unsigned char)p[2] == 0x84;
 }
 
+static int local_dual_match_parts(const char *aaa, const char *bbb, const MusicSourceItem *item)
+{
+    if (aaa == NULL || bbb == NULL || item == NULL) return 0;
+    if (aaa[0] == '\0' || bbb[0] == '\0') return 0;
+    return (strstr(item->singer, aaa) != NULL && strstr(item->song_name, bbb) != NULL) ||
+           (strstr(item->singer, bbb) != NULL && strstr(item->song_name, aaa) != NULL);
+}
+
+static int local_bbb_only_match(const char *bbb, const MusicSourceItem *item)
+{
+    if (bbb == NULL || bbb[0] == '\0' || item == NULL) return 0;
+    return strstr(item->song_name, bbb) != NULL || strstr(item->song_id, bbb) != NULL;
+}
+
+static int local_try_split_singer_song_keyword(const char *keyword, char *aaa, size_t aaa_sz, char *bbb, size_t bbb_sz)
+{
+    const char *sep;
+    size_t left_len;
+    if (keyword == NULL || aaa == NULL || bbb == NULL || aaa_sz == 0 || bbb_sz == 0) {
+        return 0;
+    }
+    aaa[0] = '\0';
+    bbb[0] = '\0';
+    for (sep = strstr(keyword, "的"); sep != NULL; sep = strstr(sep + 3, "的")) {
+        if (sep == keyword || !utf8_is_de_zh(sep) || sep[3] == '\0') {
+            continue;
+        }
+        left_len = (size_t)(sep - keyword);
+        if (left_len == 0 || left_len >= aaa_sz) {
+            continue;
+        }
+        memcpy(aaa, keyword, left_len);
+        aaa[left_len] = '\0';
+        local_copy_text(bbb, bbb_sz, sep + 3);
+        local_trim_spaces(aaa);
+        local_trim_spaces(bbb);
+        if (strlen(aaa) >= 2 && strlen(bbb) >= 2) {
+            return 1;
+        }
+        continue;
+    }
+    return 0;
+}
+
 static int local_match_keyword(const char *keyword, const MusicSourceItem *item)
 {
     const char *sep;
@@ -243,6 +287,77 @@ static int local_scan_dir(const char *root_path, const char *relative_path, cons
     return 0;
 }
 
+static int local_scan_dir_tiered(const char *root_path, const char *relative_path, const char *aaa, const char *bbb,
+                                 LocalCollectContext *dual_ctx, LocalCollectContext *bbb_ctx)
+{
+    DIR *dir;
+    struct dirent *entry;
+    dir = opendir(root_path);
+    if (dir == NULL) {
+        return -1;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        struct stat st;
+        char child_abs[1024];
+        char child_rel[MUSIC_ID_MAX];
+        MusicSourceItem item;
+        if (entry->d_name[0] == '.') continue;
+        if (snprintf(child_abs, sizeof(child_abs), "%s/%s", root_path, entry->d_name) >= (int)sizeof(child_abs)) {
+            continue;
+        }
+        if (relative_path != NULL && relative_path[0] != '\0') {
+            if (snprintf(child_rel, sizeof(child_rel), "%s/%s", relative_path, entry->d_name) >= (int)sizeof(child_rel)) {
+                continue;
+            }
+        } else {
+            if (snprintf(child_rel, sizeof(child_rel), "%s", entry->d_name) >= (int)sizeof(child_rel)) {
+                continue;
+            }
+        }
+        if (stat(child_abs, &st) != 0) {
+            continue;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            if (local_scan_dir_tiered(child_abs, child_rel, aaa, bbb, dual_ctx, bbb_ctx) != 0 && errno != ENOENT) {
+                closedir(dir);
+                return -1;
+            }
+            continue;
+        }
+        if (!S_ISREG(st.st_mode) || !local_has_audio_ext(entry->d_name)) {
+            continue;
+        }
+        memset(&item, 0, sizeof(item));
+        local_copy_text(item.source, sizeof(item.source), "local");
+        local_copy_text(item.song_id, sizeof(item.song_id), child_rel);
+        local_pick_singer(child_rel, item.singer, sizeof(item.singer));
+        local_parse_song_meta(entry->d_name, item.singer,
+                              item.song_name, sizeof(item.song_name),
+                              item.singer, sizeof(item.singer));
+        if (local_dual_match_parts(aaa, bbb, &item)) {
+            if (local_push_item(dual_ctx, &item) != 0) {
+                closedir(dir);
+                free(dual_ctx->items);
+                dual_ctx->items = NULL;
+                dual_ctx->count = 0;
+                dual_ctx->capacity = 0;
+                return -1;
+            }
+        } else if (local_bbb_only_match(bbb, &item)) {
+            if (local_push_item(bbb_ctx, &item) != 0) {
+                closedir(dir);
+                free(bbb_ctx->items);
+                bbb_ctx->items = NULL;
+                bbb_ctx->count = 0;
+                bbb_ctx->capacity = 0;
+                return -1;
+            }
+        }
+    }
+    closedir(dir);
+    return 0;
+}
+
 static void local_shuffle_items(MusicSourceItem *items, int count)
 {
     int i;
@@ -281,15 +396,37 @@ static int local_fill_page(const LocalCollectContext *ctx, int page, int page_si
 static int music_source_local_search(const char *keyword, int page, int page_size, MusicSourceResult *result)
 {
     LocalCollectContext ctx;
+    LocalCollectContext dual_ctx;
+    LocalCollectContext bbb_ctx;
+    char aaa[256];
+    char bbb[256];
     const char *root = local_music_root();
     int ret;
     memset(&ctx, 0, sizeof(ctx));
+    memset(&dual_ctx, 0, sizeof(dual_ctx));
+    memset(&bbb_ctx, 0, sizeof(bbb_ctx));
     if (page <= 0 || page_size <= 0 || result == NULL) return -1;
     local_result_reset(result);
-    ret = local_scan_dir(root, "", keyword, &ctx);
-    if (ret != 0 && errno != ENOENT) {
-        free(ctx.items);
-        return -1;
+    if (keyword != NULL && local_try_split_singer_song_keyword(keyword, aaa, sizeof(aaa), bbb, sizeof(bbb))) {
+        ret = local_scan_dir_tiered(root, "", aaa, bbb, &dual_ctx, &bbb_ctx);
+        if (ret != 0 && errno != ENOENT) {
+            free(dual_ctx.items);
+            free(bbb_ctx.items);
+            return -1;
+        }
+        if (dual_ctx.count > 0) {
+            free(bbb_ctx.items);
+            ctx = dual_ctx;
+        } else {
+            free(dual_ctx.items);
+            ctx = bbb_ctx;
+        }
+    } else {
+        ret = local_scan_dir(root, "", keyword, &ctx);
+        if (ret != 0 && errno != ENOENT) {
+            free(ctx.items);
+            return -1;
+        }
     }
     if (keyword != NULL && strcmp(keyword, "热门") == 0) {
         local_shuffle_items(ctx.items, ctx.count);
