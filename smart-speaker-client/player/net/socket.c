@@ -117,7 +117,7 @@ static void socket_handle_disconnect(void)
     }
     LOGW(TAG, "服务器断开，进入离线模式");
     player_offline_init_storage_and_library(1);
-    tts_play_text("服务器断开，已进入离线模式");
+    tts_play_audio_file(SERVER_DISCONNECT_OFFLINE_WAV);
 }
 
 // 初始化socket连接

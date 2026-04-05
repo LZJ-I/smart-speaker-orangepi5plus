@@ -30,4 +30,6 @@
 #define UDISK_PATH_YES2 "/dev/sdc1"
 #define UDISK_PATH_YES3 "/dev/sda1"
 
+#define SERVER_DISCONNECT_OFFLINE_WAV "./assets/tts/server_disconnect_offline.wav"
+
 #endif
