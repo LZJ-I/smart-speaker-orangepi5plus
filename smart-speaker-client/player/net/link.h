@@ -7,6 +7,7 @@
 #define SINGER_MAX_NAME 128
 #define MUSIC_SOURCE_MAX 16
 #define MUSIC_ID_MAX 256
+#define MUSIC_PLAY_URL_MAX 2048
 
 #define GET_MAX_MUSIC  5 // 单次获取歌曲数量
 
@@ -16,6 +17,7 @@ typedef struct Node{
     char singer[SINGER_MAX_NAME];
     char source[MUSIC_SOURCE_MAX];
     char song_id[MUSIC_ID_MAX];
+    char play_url[MUSIC_PLAY_URL_MAX];
     struct Node *next;
     struct Node *prev;
 }Music_Node;
@@ -26,6 +28,9 @@ extern Music_Node* g_music_head;       // 链表头
 // 初始化链表
 int link_init();
 int link_add_music_lib(const char *source, const char *id, const char *artist, const char *name);
+Music_Node *link_anchor_for_insert(void);
+int link_insert_node_after(Music_Node *anchor, const char *source, const char *id, const char *artist,
+                           const char *name, const char *play_url);
 int link_get_source_id(const char *song_name, const char *singer, char *source_buf, size_t source_size, char *id_buf, size_t id_size);
 int link_get_music_by_source_id(const char *source, const char *id, Music_Node *out_node);
 int link_get_first_music(Music_Node *out_node);

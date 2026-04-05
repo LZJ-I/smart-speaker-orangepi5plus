@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "player.h"
+#include "shm.h"
 
 #define TAG "LINK"
 
@@ -44,6 +45,7 @@ static void copy_node_value(Music_Node *dst, const Music_Node *src)
     safe_copy(dst->singer, sizeof(dst->singer), src->singer);
     safe_copy(dst->source, sizeof(dst->source), src->source);
     safe_copy(dst->song_id, sizeof(dst->song_id), src->song_id);
+    safe_copy(dst->play_url, sizeof(dst->play_url), src->play_url);
 }
 
 static void format_display_name(const Music_Node *node, char *buf, size_t buf_size)
@@ -89,33 +91,67 @@ int link_init()
     return 0;
 }
 
-int link_add_music_lib(const char *source, const char *id, const char *artist, const char *name)
+Music_Node *link_anchor_for_insert(void)
 {
-    if (g_music_head == NULL || name == NULL || name[0] == '\0') {
+    Shm_Data s;
+    Music_Node *n;
+    if (g_music_head == NULL) {
+        return NULL;
+    }
+    shm_get(&s);
+    if (s.current_song_id[0] == '\0') {
+        return g_music_head;
+    }
+    n = find_by_identity(NULL, s.current_song_id);
+    return (n != NULL) ? n : g_music_head;
+}
+
+int link_insert_node_after(Music_Node *anchor, const char *source, const char *id, const char *artist,
+                           const char *name, const char *play_url)
+{
+    Music_Node *node;
+    if (g_music_head == NULL || anchor == NULL || name == NULL || name[0] == '\0') {
         return -1;
     }
-    Music_Node *current = g_music_head;
-    while (current->next != NULL) current = current->next;
-    Music_Node *node = (Music_Node *)malloc(sizeof(Music_Node));
+    node = (Music_Node *)malloc(sizeof(Music_Node));
     if (node == NULL) {
         LOGE(TAG, "分配歌曲节点内存失败");
         return -1;
     }
     memset(node, 0, sizeof(Music_Node));
     safe_copy(node->song_name, sizeof(node->song_name), name);
-    safe_copy(node->singer, sizeof(node->singer), artist);
-    safe_copy(node->source, sizeof(node->source), source);
-    safe_copy(node->song_id, sizeof(node->song_id), id);
+    safe_copy(node->singer, sizeof(node->singer), artist != NULL ? artist : "");
+    safe_copy(node->source, sizeof(node->source), source != NULL ? source : "");
+    safe_copy(node->song_id, sizeof(node->song_id), id != NULL && id[0] != '\0' ? id : name);
     if (node->song_id[0] == '\0') {
         safe_copy(node->song_id, sizeof(node->song_id), node->song_name);
     }
     if (node->source[0] == '\0') {
         safe_copy(node->source, sizeof(node->source), "local");
     }
-    node->next = NULL;
-    node->prev = current;
-    current->next = node;
+    if (play_url != NULL && play_url[0] != '\0') {
+        safe_copy(node->play_url, sizeof(node->play_url), play_url);
+    }
+    node->next = anchor->next;
+    node->prev = anchor;
+    if (anchor->next != NULL) {
+        anchor->next->prev = node;
+    }
+    anchor->next = node;
     return 0;
+}
+
+int link_add_music_lib(const char *source, const char *id, const char *artist, const char *name)
+{
+    Music_Node *tail;
+    if (g_music_head == NULL || name == NULL || name[0] == '\0') {
+        return -1;
+    }
+    tail = g_music_head;
+    while (tail->next != NULL) {
+        tail = tail->next;
+    }
+    return link_insert_node_after(tail, source, id, artist, name, NULL);
 }
 
 int link_get_source_id(const char *song_name, const char *singer, char *source_buf, size_t source_size, char *id_buf, size_t id_size)

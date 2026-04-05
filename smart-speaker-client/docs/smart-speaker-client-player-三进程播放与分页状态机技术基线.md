@@ -5,7 +5,7 @@
 本文档定义 `smart-speaker-client/player` 的当前技术基线，覆盖以下内容：
 
 - 三进程播放模型（父/子/孙）职责边界与状态流转
-- `music-lib` 接入契约（搜索分页、按唯一键取 URL）
+- 在线曲库：`smart-speaker-server/music-lib` 聚合搜索；`list_music` 可返回 **`play_url`**（client 优先直链播放）
 - 歌单数据结构与共享内存一致性模型
 - 播放模式语义（顺序/随机/单曲）与翻页策略
 - 关键故障面与回退路径
@@ -19,8 +19,8 @@
 - `player/core/player_gst.c`
 - `player/core/main.c`
 - `player/select_loop/select.c`
-- `music-lib/examples/music.h`
-- `music-lib/src/lib.rs`, `music-lib/src/search.rs`
+- `../smart-speaker-server/music-lib/`（Rust，服务端链接）
+- `../smart-speaker-server/src/music_remote_list.cpp`
 
 ## 2. 核心架构
 
@@ -65,28 +65,22 @@
 - 子进程每轮调度前后以共享内存为准，同步本地 `current_song`
 - 父进程执行“切歌/翻页”后先写 `Shm_Data`，再通过 `quit` 驱动孙进程退场重建
 
-## 4. music-lib 接入契约
+## 4. 在线曲库与 URL
 
-## 4.1 搜索接口
+## 4.1 列表接口（`list_music`）
 
-- C 侧调用：`music_search_page(keyword, "auto", page, page_size, &result)`
-- 结果包含：`count`, `page`, `page_size`, `total`, `total_pages`
-- bridge 行为：每次翻页先 `link_clear_list()`，再用返回结果重建链表
+- client 短时 TCP 请求 `list_music`，可选 **`keyword`**；泛意图（热门/听歌等）由服务端走本地曲库打乱分页。
+- 精准关键词：服务端用 **`music-lib`** 搜索并在 JSON 中填 **`play_url`**（及 `source`/`song_id` 等）。
 
-## 4.2 URL 解析接口
+## 4.2 起播 URL 优先级（`resolve_play_url`）
 
-优先级：
-
-1. `music_lib_get_url_by_source_id(source, song_id, ...)`
-2. `music_lib_get_url_for_music("singer/song")`
-3. `music_lib_get_url_for_music("song")`
-4. 在线兜底拼接：`ONNINE_URL + singer + "/" + song`
-5. 离线模式：`MUSIC_PATH + song`
+1. 链表中节点已有 **`play_url`**（非空）
+2. `music_lib_get_url_by_source_id` / `music_lib_get_url_for_music`（委托 `music_source_get_url`，无 `play_url` 时）
+3. 在线兜底拼接、离线 `MUSIC_PATH` 等（见 `player.c`）
 
 约束：
 
-- 拉歌单阶段仅保存 `source + song_id + singer + song_name`，不预取整页 URL
-- URL 在实际起播前按当前曲目唯一键即时解析（按需获取）
+- 精准搜歌可 **插入当前曲之后**（`link_insert_node_after`），不整表清空；泛「热门」类仍可整表重建。
 
 在线默认态：`g_current_online_mode = ONLINE_MODE_YES`。
 
@@ -139,7 +133,7 @@
 ## 7.1 “我想听 XXX”
 
 1. `select.c` 解析规则/意图，进入 `try_music_lib_play`
-2. `player_search_and_play_keyword(keyword)` 拉取页数据并重建链表
+2. 泛意图：`player_search_and_play_keyword("热门")` 等；精准词：`player_search_insert_keyword_and_play()` 插入后播插入段第一首
 3. `player_start_play()` 选择起播曲，写共享内存
 4. fork 子进程；子进程循环 fork 孙进程
 5. 孙进程 `run_gst_player(url)` 执行播放
@@ -160,7 +154,7 @@
 
 ## 8. 稳定性与故障边界
 
-- `music-lib` 动态库加载失败：搜索/取 URL 失败，播放请求返回错误
+- 服务端 `music-lib` / 网络不可用：`list_music` 无 `play_url` 或回退本地扫描，播放可能失败或仅本地曲
 - URL 解析失败：当前曲目播放失败，孙进程退出码非 0
 - FIFO 写失败：切歌/暂停/继续无法投递到 GStreamer
 - 共享内存与链表短暂不一致：通过子进程轮询同步 `current_song` 缓解

@@ -297,23 +297,38 @@ static int server_parse_music_item(json_object *item_obj, MusicSourceItem *item)
     memset(item, 0, sizeof(*item));
     server_copy_text(item->source, sizeof(item->source), "server");
 
-    value = NULL;
-    if (json_object_object_get_ex(item_obj, "path", &value)) {
+    if (json_object_object_get_ex(item_obj, "source", &value)) {
+        const char *s = json_object_get_string(value);
+        if (s != NULL && s[0] != '\0') {
+            server_copy_text(item->source, sizeof(item->source), s);
+        }
+    }
+    if (json_object_object_get_ex(item_obj, "song_id", &value)) {
         server_copy_text(item->song_id, sizeof(item->song_id), json_object_get_string(value));
     }
-    value = NULL;
+    if (json_object_object_get_ex(item_obj, "path", &value)) {
+        const char *p = json_object_get_string(value);
+        if (p != NULL && p[0] != '\0' && item->song_id[0] == '\0') {
+            server_copy_text(item->song_id, sizeof(item->song_id), p);
+        }
+    }
     if (json_object_object_get_ex(item_obj, "song", &value)) {
         raw_song = json_object_get_string(value);
     }
-    value = NULL;
     if (json_object_object_get_ex(item_obj, "singer", &value)) {
         raw_singer = json_object_get_string(value);
+    }
+    if (json_object_object_get_ex(item_obj, "play_url", &value)) {
+        server_copy_text(item->play_url, sizeof(item->play_url), json_object_get_string(value));
     }
     server_parse_song_meta(raw_song, item->song_id, raw_singer,
                            item->song_name, sizeof(item->song_name),
                            item->singer, sizeof(item->singer));
-    if (item->song_id[0] == '\0' || item->song_name[0] == '\0') {
+    if (item->song_name[0] == '\0') {
         return -1;
+    }
+    if (item->song_id[0] == '\0') {
+        server_copy_text(item->song_id, sizeof(item->song_id), item->song_name);
     }
     return 0;
 }
@@ -328,7 +343,6 @@ static int music_source_server_search(const char *keyword, int page, int page_si
     json_object *music = NULL;
     json_object *value = NULL;
     int i;
-    (void)keyword;
     if (page <= 0 || page_size <= 0 || result == NULL) {
         return -1;
     }
@@ -340,6 +354,9 @@ static int music_source_server_search(const char *keyword, int page, int page_si
     json_object_object_add(request, "cmd", json_object_new_string("list_music"));
     json_object_object_add(request, "page", json_object_new_int(page));
     json_object_object_add(request, "page_size", json_object_new_int(page_size));
+    if (keyword != NULL && keyword[0] != '\0') {
+        json_object_object_add(request, "keyword", json_object_new_string(keyword));
+    }
     if (server_send_request(fd, request) != 0) goto done;
     if (server_recv_response(fd, &payload) != 0) goto done;
 

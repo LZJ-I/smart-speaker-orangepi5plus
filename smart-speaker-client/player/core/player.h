@@ -29,6 +29,7 @@ void player_set_mode(int mode);
 void player_singer_play(const char *singer);
 int player_play_url(const char *url);
 int player_search_and_play_keyword(const char *keyword);
+int player_search_insert_keyword_and_play(const char *keyword);
 int player_search_and_play_hot_random(void);
 int player_simulate_song_finished(void);
 int player_prepare_keyword_playlist(const char *keyword, int auto_start);

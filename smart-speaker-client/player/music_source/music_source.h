@@ -10,6 +10,7 @@ typedef struct {
     char song_id[MUSIC_ID_MAX];
     char song_name[MUSIC_MAX_NAME];
     char singer[SINGER_MAX_NAME];
+    char play_url[MUSIC_PLAY_URL_MAX];
 } MusicSourceItem;
 
 typedef struct {

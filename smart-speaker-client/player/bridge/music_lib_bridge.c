@@ -56,6 +56,47 @@ int music_lib_search_fill_list_page(const char *keyword, int page, int page_size
     return 0;
 }
 
+int music_lib_insert_search_after_current(const char *keyword, int page, int page_size, int *out_added)
+{
+    MusicSourceResult result;
+    Music_Node *anchor;
+    int i;
+
+    if (keyword == NULL || keyword[0] == '\0' || page <= 0 || page_size <= 0) {
+        return -1;
+    }
+    if (out_added != NULL) {
+        *out_added = 0;
+    }
+    memset(&result, 0, sizeof(result));
+    if (music_source_search(keyword, page, page_size, &result) != 0) {
+        return -1;
+    }
+    if (result.count <= 0) {
+        music_source_free_result(&result);
+        return -1;
+    }
+    anchor = link_anchor_for_insert();
+    if (anchor == NULL) {
+        music_source_free_result(&result);
+        return -1;
+    }
+    for (i = 0; i < result.count; ++i) {
+        const MusicSourceItem *it = &result.items[i];
+        const char *pu = (it->play_url[0] != '\0') ? it->play_url : NULL;
+        if (link_insert_node_after(anchor, it->source, it->song_id, it->singer, it->song_name, pu) != 0) {
+            music_source_free_result(&result);
+            return -1;
+        }
+        anchor = anchor->next;
+    }
+    if (out_added != NULL) {
+        *out_added = result.count;
+    }
+    music_source_free_result(&result);
+    return 0;
+}
+
 int music_lib_load_all_local_to_link(void)
 {
     MusicSourceResult result;

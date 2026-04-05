@@ -194,7 +194,10 @@ static int is_generic_query(const char *q)
 
 static int match_play_query(const char *text)
 {
-    static const char *const markers[] = {"我想听", "想听", "我要听", "来一首", "来首","给我来一首", "给我放", "播放", NULL};
+    static const char *const markers[] = {
+        "我想听", "想听", "我要听", "来一首", "来首", "给我来一首", "给我放", "播放",
+        "放一首", "点一首", "唱一首", "点播", "听听", NULL,
+    };
     int i = 0;
     if (has_control_words(text)) {
         return 0;

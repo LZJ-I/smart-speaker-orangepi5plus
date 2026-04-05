@@ -229,7 +229,7 @@ make test_online_music_chain
    export SMART_SPEAKER_SERVER_PORT=8888
    export SMART_SPEAKER_SERVER_MUSIC_BASE_URL=http://10.102.178.47/music/
    ```
-3. **`player/core/main.c` 已重新启用 `socket_init()`**：成功则日志有 `TCP 长连成功`；失败则 `TCP 长连失败`（**不会**自动走 `player_switch_offline_mode`，避免无 U 盘时被 TTS/挂载逻辑卡死）。失败时搜歌仍可用 `music_source_server` 的短时连接 + 本地回退。
+3. **`player/core/main.c` 已重新启用 `socket_init()`**：成功则日志有 `TCP 长连成功`；失败则 `TCP 长连失败`（**不会**自动走 `player_switch_offline_mode`，避免无 U 盘时被 TTS/挂载逻辑卡死）。失败时搜歌仍可用 `music_source_server` 的短时连接 + 本地回退。在线精准搜歌由 **服务端** `list_music` + `smart-speaker-server/music-lib` 返回可播 URL；泛说「听歌/热门」等仍走服务端本地曲库分页。
 4. **看日志**：`player/core/main.c` 顶部 `LOG_LEVEL`（默认 4）控制 `debug_log.h` 输出；终端跑 `./run` 直接看。关键 TAG：`PLAYER-MAIN`、`SOCKET`、`PLAYER`。可 `grep SOCKET` 或全文检索 `连接服务器`。
 5. **分层排障**：先 `./test_online_music_chain`；再 `curl -I` 打印出的 `url`；最后 `./run`。服务端终端应出现新 TCP 连接；若只有搜歌无长连，检查是否 `socket_init` 报错。
 6. **GDB**（可选）：`gdb --args ./run`，断点示例 `b socket_init`、`b music_source_server_search`。

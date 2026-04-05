@@ -4,14 +4,14 @@
 
 - 语音链路：`KWS -> ASR -> Player(select.c) -> 规则匹配 -> (命中执行 | 未命中LLM) -> TTS`
 - 播放链路：`父进程(控制)` -> `子进程(编排)` -> `孙进程(GStreamer执行)`
-- 歌单链路：`music-lib 搜索分页` -> `链表缓存(source/song_id/singer/song_name)` -> `起播时按 id 取 URL`
+- 歌单链路：`server list_music`（`music-lib` 在服务端）-> `链表含 play_url 或 source/song_id` -> `起播优先 play_url，否则按需取 URL`
 
 ## 2. 关键工程约束
 
 - 规则命中与 LLM 互斥：命中规则后必须短路，不进入 LLM
 - 泛听歌短语映射热门：`我想听歌/我想听音乐/想听` 等映射到 `热门`
 - 精确搜歌保真：`纯音乐/轻音乐` 等保持原词搜索
-- URL 按需解析：只在准备播放当前曲目时调用 `music_get_url`，不在拉歌单时批量解析
+- 服务端可在 `list_music` 时填好 `play_url`；client 无 `play_url` 时仍可按 `source/song_id` 解析（若链了库）
 
 ## 3. 本轮核心问题与根因
 

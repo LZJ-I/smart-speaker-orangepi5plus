@@ -26,12 +26,13 @@ smart-speaker-client/
   player/bridge/        # music_lib_bridge
   player/music_source/  # local/server/manager
   voice-assistant/      # main_asr_kws、main_tts、asr/kws/tts/llm/common
-  music-lib/            # Rust 音乐库
   supervisor/
   tools/
   build/
     bin/                # 可执行：asr_kws_process, tts_process, player_run, supervisor, ipc_inject, fifo_watch
 ```
+
+`smart-speaker-server/music-lib/`：Rust 聚合搜歌，由服务端 `list_music` 使用（不再位于 client 根目录）。
 
 ## 模块职责（当前）
 

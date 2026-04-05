@@ -231,6 +231,10 @@ static int resolve_play_url(const Music_Node *song, char *url, size_t url_size)
 {
     if (song == NULL || url == NULL || url_size == 0) return -1;
     url[0] = '\0';
+    if (song->play_url[0] != '\0') {
+        copy_text(url, url_size, song->play_url);
+        return (url[0] != '\0') ? 0 : -1;
+    }
     if (music_lib_get_url_by_source_id(song->source, song->song_id, url, url_size) == 0 && url[0] != '\0') {
         return 0;
     }
@@ -631,6 +635,50 @@ int player_prepare_keyword_playlist(const char *keyword, int auto_start)
 int player_search_and_play_keyword(const char *keyword)
 {
     return (player_prepare_keyword_playlist(keyword, 1) > 0) ? 0 : -1;
+}
+
+int player_search_insert_keyword_and_play(const char *keyword)
+{
+    Shm_Data s;
+    Music_Node anchor;
+    Music_Node next_song;
+    int n = 0;
+
+    if (keyword == NULL || keyword[0] == '\0') {
+        return -1;
+    }
+    if (music_lib_insert_search_after_current(keyword, 1, g_playlist_ctx.page_size, &n) != 0 || n <= 0) {
+        return -1;
+    }
+    copy_text(g_playlist_ctx.keyword, sizeof(g_playlist_ctx.keyword), keyword);
+    g_playlist_ctx.current_page = 1;
+
+    memset(&next_song, 0, sizeof(next_song));
+    shm_get(&s);
+    if (s.current_song_id[0] != '\0' && link_get_music_by_source_id(NULL, s.current_song_id, &anchor) == 0) {
+        if (link_get_next_music(anchor.source, anchor.song_id, ORDER_PLAY, 1, &next_song) != 0) {
+            if (link_get_first_music(&next_song) != 0) {
+                return -1;
+            }
+        }
+    } else {
+        if (link_get_first_music(&next_song) != 0) {
+            return -1;
+        }
+    }
+    update_shm_current_song(&s, &next_song);
+    shm_set(&s);
+
+    shm_get(&s);
+    if (pid_is_alive(s.child_pid)) {
+        g_current_state = PLAY_STATE_PLAY;
+        g_current_suspend = PLAY_SUSPEND_NO;
+        player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
+        stop_active_grandchild(0);
+    } else {
+        player_start_play();
+    }
+    return 0;
 }
 
 int player_search_and_play_hot_random(void)

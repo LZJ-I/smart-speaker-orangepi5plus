@@ -11,7 +11,7 @@
 | `net/` | TCP 客户端、上报、曲库索引 `link` |
 | `device/` | 输入设备（音量等） |
 | `rules/` | 本地规则匹配 `rule_match` |
-| `bridge/` | Rust `music-lib` 桥接 `music_lib_bridge` |
+| `bridge/` | 曲库桥接 `music_lib_bridge`（在线列表由 **server** 的 `music-lib` 搜索并返回 `play_url`） |
 | `music_source/` | 本地/服务端音乐源后端与统一选择 |
 | `example/` | 规则匹配、SD 卡挂载等独立小例子 |
 

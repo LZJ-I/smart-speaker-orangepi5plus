@@ -19,7 +19,7 @@ int try_music_lib_play(const char *text)
         return (player_search_and_play_hot_random() == 0) ? 1 : 0;
     }
     LOGI(TAG, "搜歌关键词: %s", query);
-    return (player_search_and_play_keyword(query) == 0) ? 1 : 0;
+    return (player_search_insert_keyword_and_play(query) == 0) ? 1 : 0;
 }
 
 int run_llm_and_tts(const char *raw_text)

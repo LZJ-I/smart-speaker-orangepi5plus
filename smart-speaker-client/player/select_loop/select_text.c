@@ -83,7 +83,10 @@ int select_text_is_hot_generic_query(const char *query)
 
 int select_text_extract_music_query(const char *text, char *out, size_t out_size)
 {
-    const char *markers[] = {"我想听", "想听", "我要听", "给我放", "给我来一首", "来一首", "播放", "听", NULL};
+    const char *markers[] = {
+        "我想听", "想听", "我要听", "给我放", "给我来一首", "来一首", "来首",
+        "放一首", "点一首", "唱一首", "点播", "播放", "听", NULL,
+    };
     const char *p = NULL;
     int i = 0;
     if (text == NULL || out == NULL || out_size == 0) {
