@@ -696,17 +696,9 @@ int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_
 
 void player_voice_intro_commit_insert_play(void)
 {
-    Shm_Data s;
-
-    shm_get(&s);
-    if (pid_is_alive(s.child_pid)) {
-        g_current_state = PLAY_STATE_PLAY;
-        g_current_suspend = PLAY_SUSPEND_NO;
-        player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
-        stop_active_grandchild(0);
-    } else {
-        player_start_play();
-    }
+    /* 父进程已改链表；子进程堆为 fork 快照，仅杀孙进程会在子进程内找不到新节点并复用旧 play_url */
+    player_stop_play();
+    player_start_play();
 }
 
 int player_search_insert_keyword_and_play(const char *keyword)
