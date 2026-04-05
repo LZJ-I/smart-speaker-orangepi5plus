@@ -14,6 +14,20 @@
 
 #include "music_source_server.h"
 #include "player_constants.h"
+#include "runtime_config.h"
+#include "debug_log.h"
+
+#define TAG "MUSIC-SERVER"
+
+static const char *music_source_server_effective_source(const char *source)
+{
+    if (source != NULL && source[0] != '\0') {
+        return source;
+    }
+    return player_runtime_music_search_source();
+}
+
+static void music_source_server_free_result(MusicSourceResult *result);
 
 static void server_result_reset(MusicSourceResult *result)
 {
@@ -97,28 +111,57 @@ static void server_parse_song_meta(const char *raw_song, const char *song_id, co
     }
 }
 
+static void server_sync_item_aliases(MusicSourceItem *item)
+{
+    if (item == NULL) return;
+    if (item->id[0] == '\0' && item->song_id[0] != '\0') {
+        server_copy_text(item->id, sizeof(item->id), item->song_id);
+    }
+    if (item->song_id[0] == '\0' && item->id[0] != '\0') {
+        server_copy_text(item->song_id, sizeof(item->song_id), item->id);
+    }
+    if (item->title[0] == '\0' && item->song_name[0] != '\0') {
+        server_copy_text(item->title, sizeof(item->title), item->song_name);
+    }
+    if (item->song_name[0] == '\0' && item->title[0] != '\0') {
+        server_copy_text(item->song_name, sizeof(item->song_name), item->title);
+    }
+    if (item->subtitle[0] == '\0' && item->singer[0] != '\0') {
+        server_copy_text(item->subtitle, sizeof(item->subtitle), item->singer);
+    }
+    if (item->singer[0] == '\0' && item->subtitle[0] != '\0') {
+        server_copy_text(item->singer, sizeof(item->singer), item->subtitle);
+    }
+}
+
+static void server_log_result_preview(const char *label, const char *keyword, const MusicSourceResult *result)
+{
+    if (result == NULL) {
+        return;
+    }
+    if (result->count > 0) {
+        const MusicSourceItem *first = &result->items[0];
+        LOGI(TAG, "%s keyword=%s count=%d first=%s/%s/%s/%s",
+             label,
+             keyword != NULL ? keyword : "",
+             result->count,
+             first->source,
+             first->id[0] != '\0' ? first->id : first->song_id,
+             first->title[0] != '\0' ? first->title : first->song_name,
+             first->subtitle[0] != '\0' ? first->subtitle : first->singer);
+    } else {
+        LOGI(TAG, "%s keyword=%s count=0", label, keyword != NULL ? keyword : "");
+    }
+}
+
 static const char *music_server_ip(void)
 {
-    const char *value = getenv(SERVER_IP_ENV);
-    if (value != NULL && value[0] != '\0') {
-        return value;
-    }
-    return SERVER_IP;
+    return player_runtime_server_ip();
 }
 
 static int music_server_port(void)
 {
-    const char *value = getenv(SERVER_PORT_ENV);
-    char *end = NULL;
-    long port;
-    if (value == NULL || value[0] == '\0') {
-        return SERVER_PORT;
-    }
-    port = strtol(value, &end, 10);
-    if (end == value || *end != '\0' || port <= 0 || port > 65535) {
-        return SERVER_PORT;
-    }
-    return (int)port;
+    return player_runtime_server_port();
 }
 
 static int server_connect_once(void)
@@ -169,7 +212,8 @@ static int server_connect_once(void)
         return -1;
     }
     {
-        struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
+        /* 与 smart-speaker-server → music-service 超时一致，避免酷我搜索未返回就断读 */
+        struct timeval tv = {.tv_sec = 30, .tv_usec = 0};
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     }
@@ -234,9 +278,13 @@ int music_source_server_parse_music_item(json_object *item_obj, MusicSourceItem 
     json_object *value;
     const char *raw_song = NULL;
     const char *raw_singer = NULL;
+    char parsed_title[MUSIC_MAX_NAME];
+    char parsed_subtitle[SINGER_MAX_NAME];
     if (item_obj == NULL || item == NULL) return -1;
     memset(item, 0, sizeof(*item));
     server_copy_text(item->source, sizeof(item->source), "server");
+    parsed_title[0] = '\0';
+    parsed_subtitle[0] = '\0';
 
     if (json_object_object_get_ex(item_obj, "source", &value)) {
         const char *s = json_object_get_string(value);
@@ -244,14 +292,28 @@ int music_source_server_parse_music_item(json_object *item_obj, MusicSourceItem 
             server_copy_text(item->source, sizeof(item->source), s);
         }
     }
+    if (json_object_object_get_ex(item_obj, "id", &value)) {
+        server_copy_text(item->id, sizeof(item->id), json_object_get_string(value));
+    }
     if (json_object_object_get_ex(item_obj, "song_id", &value)) {
         server_copy_text(item->song_id, sizeof(item->song_id), json_object_get_string(value));
     }
     if (json_object_object_get_ex(item_obj, "path", &value)) {
         const char *p = json_object_get_string(value);
-        if (p != NULL && p[0] != '\0' && item->song_id[0] == '\0') {
-            server_copy_text(item->song_id, sizeof(item->song_id), p);
+        if (p != NULL && p[0] != '\0') {
+            if (item->song_id[0] == '\0') {
+                server_copy_text(item->song_id, sizeof(item->song_id), p);
+            }
+            if (item->id[0] == '\0') {
+                server_copy_text(item->id, sizeof(item->id), p);
+            }
         }
+    }
+    if (json_object_object_get_ex(item_obj, "title", &value)) {
+        server_copy_text(item->title, sizeof(item->title), json_object_get_string(value));
+    }
+    if (json_object_object_get_ex(item_obj, "subtitle", &value)) {
+        server_copy_text(item->subtitle, sizeof(item->subtitle), json_object_get_string(value));
     }
     if (json_object_object_get_ex(item_obj, "song", &value)) {
         raw_song = json_object_get_string(value);
@@ -262,19 +324,30 @@ int music_source_server_parse_music_item(json_object *item_obj, MusicSourceItem 
     if (json_object_object_get_ex(item_obj, "play_url", &value)) {
         server_copy_text(item->play_url, sizeof(item->play_url), json_object_get_string(value));
     }
-    server_parse_song_meta(raw_song, item->song_id, raw_singer,
-                           item->song_name, sizeof(item->song_name),
-                           item->singer, sizeof(item->singer));
-    if (item->song_name[0] == '\0') {
+    server_parse_song_meta(raw_song, item->id[0] != '\0' ? item->id : item->song_id, raw_singer,
+                           parsed_title, sizeof(parsed_title),
+                           parsed_subtitle, sizeof(parsed_subtitle));
+    if (item->title[0] == '\0') {
+        server_copy_text(item->title, sizeof(item->title), parsed_title);
+    }
+    if (item->subtitle[0] == '\0') {
+        server_copy_text(item->subtitle, sizeof(item->subtitle), parsed_subtitle);
+    }
+    server_sync_item_aliases(item);
+    if (item->title[0] == '\0') {
         return -1;
     }
-    if (item->song_id[0] == '\0') {
-        server_copy_text(item->song_id, sizeof(item->song_id), item->song_name);
+    if (item->id[0] == '\0') {
+        server_copy_text(item->id, sizeof(item->id), item->title);
     }
+    server_sync_item_aliases(item);
     return 0;
 }
 
-int music_source_server_list_music_page(const char *keyword, int page, int page_size, MusicSourceResult *result)
+static int music_source_server_list_page_cmd(const char *cmd, const char *log_label,
+                                             const char *keyword, const char *source,
+                                             int page, int page_size,
+                                             MusicSourceResult *result)
 {
     int fd;
     int ret = -1;
@@ -292,11 +365,15 @@ int music_source_server_list_music_page(const char *keyword, int page, int page_
     if (fd < 0) return -1;
 
     request = json_object_new_object();
-    json_object_object_add(request, "cmd", json_object_new_string("list_music"));
+    json_object_object_add(request, "cmd", json_object_new_string(cmd));
     json_object_object_add(request, "page", json_object_new_int(page));
     json_object_object_add(request, "page_size", json_object_new_int(page_size));
     if (keyword != NULL && keyword[0] != '\0') {
         json_object_object_add(request, "keyword", json_object_new_string(keyword));
+    }
+    {
+        const char *src_eff = music_source_server_effective_source(source);
+        json_object_object_add(request, "source", json_object_new_string(src_eff));
     }
     if (server_send_request(fd, request) != 0) goto done;
     if (server_recv_response(fd, &payload) != 0) goto done;
@@ -322,7 +399,102 @@ int music_source_server_list_music_page(const char *keyword, int page, int page_
         }
     }
 
-    if (!json_object_object_get_ex(root, "music", &music) || !json_object_is_type(music, json_type_array)) {
+    if (!json_object_object_get_ex(root, "items", &music) || !json_object_is_type(music, json_type_array)) {
+        if (!json_object_object_get_ex(root, "music", &music) || !json_object_is_type(music, json_type_array)) {
+            ret = 0;
+            goto done;
+        }
+    }
+    result->count = json_object_array_length(music);
+    if (result->count > 0) {
+        result->items = (MusicSourceItem *)calloc((size_t)result->count, sizeof(MusicSourceItem));
+        if (result->items == NULL) goto done;
+        for (i = 0; i < result->count; ++i) {
+            if (music_source_server_parse_music_item(json_object_array_get_idx(music, i), &result->items[i]) != 0) {
+                free(result->items);
+                result->items = NULL;
+                result->count = 0;
+                goto done;
+            }
+        }
+    }
+    server_log_result_preview(log_label, keyword, result);
+    ret = 0;
+
+done:
+    if (request != NULL) json_object_put(request);
+    if (root != NULL) json_object_put(root);
+    free(payload);
+    close(fd);
+    return ret;
+}
+
+int music_source_server_list_music_page(const char *keyword, const char *source,
+                                        int page, int page_size, MusicSourceResult *result)
+{
+    LOGI(TAG, "search.song source=%s keyword=%s page=%d page_size=%d",
+         music_source_server_effective_source(source), keyword != NULL ? keyword : "", page, page_size);
+    return music_source_server_list_page_cmd("music.search.song", "search.song.reply", keyword, source,
+                                             page, page_size, result);
+}
+
+int music_source_server_list_playlist_page(const char *keyword, const char *source,
+                                           int page, int page_size, MusicSourceResult *result)
+{
+    LOGI(TAG, "search.playlist source=%s keyword=%s page=%d page_size=%d",
+         music_source_server_effective_source(source), keyword != NULL ? keyword : "", page, page_size);
+    return music_source_server_list_page_cmd("music.search.playlist", "search.playlist.reply", keyword, source,
+                                             page, page_size, result);
+}
+
+static int music_source_server_search(const char *keyword, int page, int page_size, MusicSourceResult *result)
+{
+    return music_source_server_list_music_page(keyword, NULL, page, page_size, result);
+}
+
+static int music_source_server_playlist_detail(const char *playlist_id, const char *source, MusicSourceResult *result)
+{
+    int fd;
+    int ret = -1;
+    char *payload = NULL;
+    json_object *request = NULL;
+    json_object *root = NULL;
+    json_object *music = NULL;
+    json_object *value = NULL;
+    int i;
+
+    if (playlist_id == NULL || playlist_id[0] == '\0' || result == NULL) {
+        return -1;
+    }
+    server_result_reset(result);
+    fd = server_connect_once();
+    if (fd < 0) return -1;
+
+    request = json_object_new_object();
+    json_object_object_add(request, "cmd", json_object_new_string("music.playlist.detail"));
+    json_object_object_add(request, "id", json_object_new_string(playlist_id));
+    if (source != NULL && source[0] != '\0') {
+        json_object_object_add(request, "source", json_object_new_string(source));
+    }
+    if (server_send_request(fd, request) != 0) goto done;
+    if (server_recv_response(fd, &payload) != 0) goto done;
+
+    root = json_tokener_parse(payload);
+    if (root == NULL) goto done;
+    if (!json_object_object_get_ex(root, "result", &value) ||
+        strcmp(json_object_get_string(value), "ok") != 0) {
+        ret = 0;
+        goto done;
+    }
+    if (json_object_object_get_ex(root, "total_pages", &value)) {
+        result->total_pages = json_object_get_int(value);
+    }
+    if (json_object_object_get_ex(root, "total", &value)) {
+        result->total = json_object_get_int(value);
+    }
+    result->current_page = 1;
+
+    if (!json_object_object_get_ex(root, "items", &music) || !json_object_is_type(music, json_type_array)) {
         ret = 0;
         goto done;
     }
@@ -339,6 +511,7 @@ int music_source_server_list_music_page(const char *keyword, int page, int page_
             }
         }
     }
+    server_log_result_preview("playlist.detail.reply", playlist_id, result);
     ret = 0;
 
 done:
@@ -347,11 +520,6 @@ done:
     free(payload);
     close(fd);
     return ret;
-}
-
-static int music_source_server_search(const char *keyword, int page, int page_size, MusicSourceResult *result)
-{
-    return music_source_server_list_music_page(keyword, page, page_size, result);
 }
 
 static int server_fetch_play_url(const char *source, const char *song_id, char *url_buf, size_t url_size)
@@ -373,9 +541,9 @@ static int server_fetch_play_url(const char *source, const char *song_id, char *
         return -1;
     }
     request = json_object_new_object();
-    json_object_object_add(request, "cmd", json_object_new_string("get_play_url"));
+    json_object_object_add(request, "cmd", json_object_new_string("music.url.resolve"));
     json_object_object_add(request, "source", json_object_new_string(source));
-    json_object_object_add(request, "song_id", json_object_new_string(song_id));
+    json_object_object_add(request, "id", json_object_new_string(song_id));
     if (server_send_request(fd, request) != 0) {
         goto done;
     }
@@ -385,12 +553,6 @@ static int server_fetch_play_url(const char *source, const char *song_id, char *
     root = json_tokener_parse(payload);
     if (root == NULL) {
         goto done;
-    }
-    if (json_object_object_get_ex(root, "result", &value)) {
-        const char *rs = json_object_get_string(value);
-        if (rs != NULL && strcmp(rs, "disabled") == 0) {
-            goto done;
-        }
     }
     if (!json_object_object_get_ex(root, "result", &value) || strcmp(json_object_get_string(value), "ok") != 0) {
         goto done;
@@ -405,6 +567,7 @@ static int server_fetch_play_url(const char *source, const char *song_id, char *
     if (snprintf(url_buf, url_size, "%s", pu) >= (int)url_size) {
         goto done;
     }
+    LOGI(TAG, "resolve.play_url source=%s id=%s play_url=%s", source, song_id, pu);
     ret = 0;
 
 done:
@@ -434,96 +597,68 @@ static void music_source_server_free_result(MusicSourceResult *result)
     server_result_reset(result);
 }
 
-int music_source_server_resolve_keyword(const char *keyword, MusicSourceItem *out_item)
+int music_source_server_resolve_keyword(const char *keyword, const char *source, MusicSourceItem *out_item)
 {
-    int fd;
-    int ret = -1;
-    char *payload = NULL;
-    json_object *request = NULL;
-    json_object *root = NULL;
-    json_object *value = NULL;
-    const char *cmd_s;
-    const char *rs;
+    MusicSourceResult result;
 
     if (keyword == NULL || keyword[0] == '\0' || out_item == NULL) {
         return -1;
     }
     memset(out_item, 0, sizeof(*out_item));
-    fd = server_connect_once();
-    if (fd < 0) {
+    memset(&result, 0, sizeof(result));
+    if (music_source_server_list_music_page(keyword, source, 1, 1, &result) != 0 || result.count <= 0) {
         return -1;
     }
-    request = json_object_new_object();
-    json_object_object_add(request, "cmd", json_object_new_string("resolve_music"));
-    json_object_object_add(request, "keyword", json_object_new_string(keyword));
-    if (server_send_request(fd, request) != 0) {
-        goto done;
-    }
-    if (server_recv_response(fd, &payload) != 0) {
-        goto done;
-    }
-    root = json_tokener_parse(payload);
-    if (root == NULL) {
-        goto done;
-    }
-    if (!json_object_object_get_ex(root, "cmd", &value)) {
-        goto done;
-    }
-    cmd_s = json_object_get_string(value);
-    if (cmd_s == NULL || strcmp(cmd_s, "reply_resolve_music") != 0) {
-        goto done;
-    }
-    if (!json_object_object_get_ex(root, "result", &value)) {
-        goto done;
-    }
-    rs = json_object_get_string(value);
-    if (rs != NULL && strcmp(rs, "disabled") == 0) {
-        music_source_set_online_search_blocked(1);
-        goto done;
-    }
-    if (rs == NULL || strcmp(rs, "ok") != 0) {
-        goto done;
-    }
-    if (!json_object_object_get_ex(root, "play_url", &value)) {
-        goto done;
-    }
-    server_copy_text(out_item->play_url, sizeof(out_item->play_url), json_object_get_string(value));
+    *out_item = result.items[0];
+    server_sync_item_aliases(out_item);
     if (out_item->play_url[0] == '\0') {
-        goto done;
+        (void)server_fetch_play_url(out_item->source,
+                                    out_item->id[0] != '\0' ? out_item->id : out_item->song_id,
+                                    out_item->play_url, sizeof(out_item->play_url));
     }
-    if (json_object_object_get_ex(root, "source", &value)) {
-        server_copy_text(out_item->source, sizeof(out_item->source), json_object_get_string(value));
-    }
-    if (json_object_object_get_ex(root, "song_id", &value)) {
-        server_copy_text(out_item->song_id, sizeof(out_item->song_id), json_object_get_string(value));
-    }
-    if (json_object_object_get_ex(root, "singer", &value)) {
-        server_copy_text(out_item->singer, sizeof(out_item->singer), json_object_get_string(value));
-    }
-    if (json_object_object_get_ex(root, "song", &value)) {
-        server_copy_text(out_item->song_name, sizeof(out_item->song_name), json_object_get_string(value));
-    }
-    if (out_item->song_name[0] == '\0') {
-        server_copy_text(out_item->song_name, sizeof(out_item->song_name), keyword);
-    }
-    if (out_item->song_id[0] == '\0') {
-        server_copy_text(out_item->song_id, sizeof(out_item->song_id), out_item->song_name);
-    }
-    if (out_item->source[0] == '\0') {
-        server_copy_text(out_item->source, sizeof(out_item->source), "server");
-    }
-    ret = 0;
+    LOGI(TAG, "resolve.keyword source=%s keyword=%s first=%s/%s/%s/%s play_url=%s",
+         music_source_server_effective_source(source),
+         keyword,
+         out_item->source,
+         out_item->id[0] != '\0' ? out_item->id : out_item->song_id,
+         out_item->title[0] != '\0' ? out_item->title : out_item->song_name,
+         out_item->subtitle[0] != '\0' ? out_item->subtitle : out_item->singer,
+         out_item->play_url);
+    music_source_server_free_result(&result);
+    return 0;
+}
 
-done:
-    if (request != NULL) {
-        json_object_put(request);
+int music_source_server_resolve_playlist_keyword(const char *keyword, const char *source, MusicSourceResult *out_result)
+{
+    MusicSourceResult playlists;
+    const MusicSourceItem *playlist;
+    const char *playlist_id;
+
+    if (out_result == NULL) {
+        return -1;
     }
-    if (root != NULL) {
-        json_object_put(root);
+    memset(out_result, 0, sizeof(*out_result));
+    memset(&playlists, 0, sizeof(playlists));
+    if (music_source_server_list_playlist_page(keyword, source, 1, 1, &playlists) != 0 || playlists.count <= 0) {
+        music_source_server_free_result(&playlists);
+        return -1;
     }
-    free(payload);
-    close(fd);
-    return ret;
+    playlist = &playlists.items[0];
+    playlist_id = playlist->id[0] != '\0' ? playlist->id : playlist->song_id;
+    LOGI(TAG, "resolve.playlist source=%s keyword=%s first=%s/%s/%s/%s",
+         music_source_server_effective_source(source),
+         keyword != NULL ? keyword : "",
+         playlist->source,
+         playlist_id,
+         playlist->title[0] != '\0' ? playlist->title : playlist->song_name,
+         playlist->subtitle[0] != '\0' ? playlist->subtitle : playlist->singer);
+    if (playlist_id == NULL || playlist_id[0] == '\0' ||
+        music_source_server_playlist_detail(playlist_id, playlist->source, out_result) != 0) {
+        music_source_server_free_result(&playlists);
+        return -1;
+    }
+    music_source_server_free_result(&playlists);
+    return 0;
 }
 
 const MusicSourceBackend *music_source_server_backend(void)

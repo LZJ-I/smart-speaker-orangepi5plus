@@ -12,11 +12,13 @@
 #include "music_source_manager.h"
 #include "player.h"
 #include "select.h"
+#include "select_text.h"
 
 #define TAG "MUSIC-ASYNC"
 
 typedef struct MasJob {
     char q[256];
+    char source[16];
     uint32_t token;
 } MasJob;
 
@@ -25,6 +27,7 @@ static pthread_mutex_t g_mas_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t g_latest_token;
 
 static char g_query[256];
+static char g_source[16];
 static music_async_out_t g_pending_out;
 static MusicSourceItem g_pending_item;
 static MusicSourceResult g_pending_search;
@@ -39,11 +42,12 @@ static void mas_notify_write(void)
 }
 
 static void mas_publish_or_drop(uint32_t job_tok, music_async_out_t out, const MusicSourceItem *it, MusicSourceResult *sr,
-                                const char *q_for_display)
+                                const char *q_for_display, const char *source_for_display)
 {
     pthread_mutex_lock(&g_mas_mu);
     if (job_tok != g_latest_token) {
-        if (out == MUSIC_ASYNC_OK_SEARCH && sr != NULL && sr->items != NULL) {
+        if ((out == MUSIC_ASYNC_OK_SEARCH || out == MUSIC_ASYNC_OK_PLAYLIST) &&
+            sr != NULL && sr->items != NULL) {
             music_source_free_result(sr);
             memset(sr, 0, sizeof(*sr));
         }
@@ -55,10 +59,17 @@ static void mas_publish_or_drop(uint32_t job_tok, music_async_out_t out, const M
     memset(&g_pending_search, 0, sizeof(g_pending_search));
     if (q_for_display != NULL) {
         snprintf(g_query, sizeof(g_query), "%s", q_for_display);
+    } else {
+        g_query[0] = '\0';
+    }
+    if (source_for_display != NULL) {
+        snprintf(g_source, sizeof(g_source), "%s", source_for_display);
+    } else {
+        g_source[0] = '\0';
     }
     if (out == MUSIC_ASYNC_OK_RESOLVE && it != NULL) {
         g_pending_item = *it;
-    } else if (out == MUSIC_ASYNC_OK_SEARCH && sr != NULL) {
+    } else if ((out == MUSIC_ASYNC_OK_SEARCH || out == MUSIC_ASYNC_OK_PLAYLIST) && sr != NULL) {
         g_pending_search = *sr;
         memset(sr, 0, sizeof(*sr));
     }
@@ -70,6 +81,7 @@ static void *mas_play_query_thread(void *arg)
 {
     MasJob *job = (MasJob *)arg;
     char q[256];
+    char source[16];
     uint32_t tok;
     MusicSourceItem it;
     MusicSourceResult sr;
@@ -79,6 +91,7 @@ static void *mas_play_query_thread(void *arg)
         return NULL;
     }
     snprintf(q, sizeof(q), "%s", job->q);
+    snprintf(source, sizeof(source), "%s", job->source);
     tok = job->token;
     free(job);
     job = NULL;
@@ -86,9 +99,23 @@ static void *mas_play_query_thread(void *arg)
     memset(&it, 0, sizeof(it));
     memset(&sr, 0, sizeof(sr));
 
-    if (g_current_online_mode == ONLINE_MODE_YES && music_source_server_resolve_keyword(q, &it) == 0) {
-        mas_publish_or_drop(tok, MUSIC_ASYNC_OK_RESOLVE, &it, NULL, q);
-        return NULL;
+    if (g_current_online_mode == ONLINE_MODE_YES) {
+        if (select_text_is_playlist_query(q)) {
+            char playlist_kw[256];
+            select_text_normalize_playlist_keyword(q, playlist_kw, sizeof(playlist_kw));
+            LOGI(TAG, "歌单检索 source=%s raw=%s norm=%s", source, q, playlist_kw);
+            if (music_source_server_resolve_playlist_keyword(playlist_kw, source, &sr) == 0 && sr.count > 0) {
+                mas_publish_or_drop(tok, MUSIC_ASYNC_OK_PLAYLIST, NULL, &sr, q, source);
+                return NULL;
+            }
+            music_source_free_result(&sr);
+            memset(&sr, 0, sizeof(sr));
+            mas_publish_or_drop(tok, MUSIC_ASYNC_FAIL, NULL, NULL, q, source);
+            return NULL;
+        } else if (music_source_server_resolve_keyword(q, source, &it) == 0) {
+            mas_publish_or_drop(tok, MUSIC_ASYNC_OK_RESOLVE, &it, NULL, q, source);
+            return NULL;
+        }
     }
 
     player_get_playlist_ctx(&pl);
@@ -98,11 +125,11 @@ static void *mas_play_query_thread(void *arg)
         }
         music_source_free_result(&sr);
         memset(&sr, 0, sizeof(sr));
-        mas_publish_or_drop(tok, MUSIC_ASYNC_FAIL, NULL, NULL, q);
+        mas_publish_or_drop(tok, MUSIC_ASYNC_FAIL, NULL, NULL, q, source);
         return NULL;
     }
 
-    mas_publish_or_drop(tok, MUSIC_ASYNC_OK_SEARCH, NULL, &sr, q);
+    mas_publish_or_drop(tok, MUSIC_ASYNC_OK_SEARCH, NULL, &sr, q, source);
     return NULL;
 }
 
@@ -156,18 +183,20 @@ void music_server_async_on_readable(void)
     g_pending_out = MUSIC_ASYNC_FAIL;
     memset(&g_pending_item, 0, sizeof(g_pending_item));
     memset(&g_pending_search, 0, sizeof(g_pending_search));
+    g_query[0] = '\0';
+    g_source[0] = '\0';
     pthread_mutex_unlock(&g_mas_mu);
 
     if (out == MUSIC_ASYNC_OK_RESOLVE) {
         select_music_async_play_query_done(out, &it, NULL, q);
-    } else if (out == MUSIC_ASYNC_OK_SEARCH) {
+    } else if (out == MUSIC_ASYNC_OK_SEARCH || out == MUSIC_ASYNC_OK_PLAYLIST) {
         select_music_async_play_query_done(out, NULL, &sr, q);
     } else {
         select_music_async_play_query_done(MUSIC_ASYNC_FAIL, NULL, NULL, q);
     }
 }
 
-int music_server_async_start_play_query(const char *query)
+int music_server_async_start_play_query(const char *query, const char *source)
 {
     pthread_t th;
     pthread_attr_t attr;
@@ -187,6 +216,7 @@ int music_server_async_start_play_query(const char *query)
     g_latest_token++;
     job->token = g_latest_token;
     snprintf(job->q, sizeof(job->q), "%s", query);
+    snprintf(job->source, sizeof(job->source), "%s", source != NULL ? source : "");
     pthread_mutex_unlock(&g_mas_mu);
 
     pthread_attr_init(&attr);

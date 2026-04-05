@@ -7,6 +7,9 @@
 
 typedef struct {
     char source[MUSIC_SOURCE_MAX];
+    char id[MUSIC_ID_MAX];
+    char title[MUSIC_MAX_NAME];
+    char subtitle[SINGER_MAX_NAME];
     char song_id[MUSIC_ID_MAX];
     char song_name[MUSIC_MAX_NAME];
     char singer[SINGER_MAX_NAME];

@@ -69,7 +69,7 @@ int music_lib_resolve_insert_one_after_current(const char *keyword)
     if (keyword == NULL || keyword[0] == '\0') {
         return -1;
     }
-    if (music_source_server_resolve_keyword(keyword, &item) != 0) {
+    if (music_source_server_resolve_keyword(keyword, NULL, &item) != 0) {
         return -1;
     }
     return music_lib_resolve_insert_item_after_current(&item);

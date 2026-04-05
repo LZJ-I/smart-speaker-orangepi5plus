@@ -5,7 +5,11 @@
 
 const MusicSourceBackend *music_source_local_backend(void);
 const MusicSourceBackend *music_source_server_backend(void);
-int music_source_server_resolve_keyword(const char *keyword, MusicSourceItem *out_item);
-int music_source_server_list_music_page(const char *keyword, int page, int page_size, MusicSourceResult *result);
+int music_source_server_resolve_keyword(const char *keyword, const char *source, MusicSourceItem *out_item);
+int music_source_server_list_music_page(const char *keyword, const char *source,
+                                        int page, int page_size, MusicSourceResult *result);
+int music_source_server_list_playlist_page(const char *keyword, const char *source,
+                                           int page, int page_size, MusicSourceResult *result);
+int music_source_server_resolve_playlist_keyword(const char *keyword, const char *source, MusicSourceResult *out_result);
 
 #endif

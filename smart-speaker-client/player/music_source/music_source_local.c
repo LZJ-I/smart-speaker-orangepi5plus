@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include "player_constants.h"
+#include "runtime_config.h"
 
 typedef struct {
     MusicSourceItem *items;
@@ -18,11 +19,7 @@ typedef struct {
 
 static const char *local_music_root(void)
 {
-    const char *env_path = getenv(LOCAL_MUSIC_ROOT_ENV);
-    if (env_path != NULL && env_path[0] != '\0') {
-        return env_path;
-    }
-    return SDCARD_MOUNT_PATH;
+    return player_runtime_local_music_root();
 }
 
 static void local_result_reset(MusicSourceResult *result)
