@@ -8,6 +8,7 @@
 #include <limits.h>
 
 #include "select.h"
+#include "music_server_async.h"
 #include "link.h"
 #include "shm.h"
 #include "socket.h"
@@ -119,6 +120,11 @@ int main(int argc, char const *argv[])
         return -1;
     }
     LOGI(TAG, "select初始化成功！");
+
+    if (music_server_async_init() != 0) {
+        LOGE(TAG, "music_server_async 初始化失败");
+        return -1;
+    }
 
     // 打开并监听asr模型的管道文件
     if(init_asr_fifo() != 0)

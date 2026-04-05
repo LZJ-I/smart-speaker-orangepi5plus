@@ -654,21 +654,14 @@ int player_voice_intro_consume_deferred_play(void)
     return k;
 }
 
-int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_Node *out_track)
+static int player_voice_intro_shm_after_insert(Music_Node *out_track, const char *playlist_keyword, int set_playlist_ctx)
 {
     Shm_Data s;
     Music_Node anchor;
     Music_Node next_song;
-    int n = 0;
 
-    if (keyword == NULL || keyword[0] == '\0') {
-        return -1;
-    }
-    if (!(g_current_online_mode == ONLINE_MODE_YES && music_lib_resolve_insert_one_after_current(keyword) == 0)) {
-        if (music_lib_insert_search_after_current(keyword, 1, g_playlist_ctx.page_size, &n) != 0 || n <= 0) {
-            return -1;
-        }
-        copy_text(g_playlist_ctx.keyword, sizeof(g_playlist_ctx.keyword), keyword);
+    if (set_playlist_ctx && playlist_keyword != NULL && playlist_keyword[0] != '\0') {
+        copy_text(g_playlist_ctx.keyword, sizeof(g_playlist_ctx.keyword), playlist_keyword);
         g_playlist_ctx.current_page = 1;
     }
 
@@ -692,6 +685,46 @@ int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_
         *out_track = next_song;
     }
     return 0;
+}
+
+int player_play_query_resolve_done(const MusicSourceItem *item, const char *keyword, Music_Node *out_track)
+{
+    if (item == NULL || keyword == NULL || keyword[0] == '\0') {
+        return -1;
+    }
+    if (music_lib_resolve_insert_item_after_current(item) != 0) {
+        return -1;
+    }
+    return player_voice_intro_shm_after_insert(out_track, keyword, 0);
+}
+
+int player_play_query_search_done(MusicSourceResult *result, const char *keyword, Music_Node *out_track)
+{
+    int n = 0;
+    if (result == NULL || keyword == NULL || keyword[0] == '\0') {
+        return -1;
+    }
+    if (music_lib_insert_search_result_after_current(result, &n) != 0 || n <= 0) {
+        return -1;
+    }
+    return player_voice_intro_shm_after_insert(out_track, keyword, 1);
+}
+
+int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_Node *out_track)
+{
+    int n = 0;
+
+    if (keyword == NULL || keyword[0] == '\0') {
+        return -1;
+    }
+    if (!(g_current_online_mode == ONLINE_MODE_YES && music_lib_resolve_insert_one_after_current(keyword) == 0)) {
+        if (music_lib_insert_search_after_current(keyword, 1, g_playlist_ctx.page_size, &n) != 0 || n <= 0) {
+            return -1;
+        }
+        return player_voice_intro_shm_after_insert(out_track, keyword, 1);
+    }
+
+    return player_voice_intro_shm_after_insert(out_track, keyword, 0);
 }
 
 void player_voice_intro_commit_insert_play(void)

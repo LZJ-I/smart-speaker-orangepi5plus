@@ -6,11 +6,13 @@
 #include "select.h"
 #include "debug_log.h"
 #include "music_source.h"
+#include "music_server_async.h"
 #include "voice-assistant/llm/llm.h"
 
 #define TAG "SELECT"
 
 static const char *ONLINE_MUSIC_UNSUPPORTED_WAV = "./assets/tts/online_music_unsupported.wav";
+static const char *FALLBACK_UNMATCHED_WAV = "./assets/tts/fallback_unmatched.wav";
 
 static void format_voice_track_intro(const Music_Node *t, char *buf, size_t buf_sz)
 {
@@ -26,6 +28,44 @@ static void format_voice_track_intro(const Music_Node *t, char *buf, size_t buf_
     } else {
         snprintf(buf, buf_sz, "好的，即将为你播放");
     }
+}
+
+void select_music_async_play_query_done(music_async_out_t out, MusicSourceItem *item, MusicSourceResult *search_res,
+                                        const char *query)
+{
+    Music_Node track;
+    char intro[512];
+    char offline_msg[384];
+
+    memset(&track, 0, sizeof(track));
+    if (out == MUSIC_ASYNC_OK_RESOLVE) {
+        if (player_play_query_resolve_done(item, query, &track) != 0) {
+            out = MUSIC_ASYNC_FAIL;
+        }
+    } else if (out == MUSIC_ASYNC_OK_SEARCH) {
+        if (player_play_query_search_done(search_res, query, &track) != 0) {
+            out = MUSIC_ASYNC_FAIL;
+        }
+    }
+
+    if (out == MUSIC_ASYNC_FAIL) {
+        if (music_source_take_online_search_blocked()) {
+            tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);
+            return;
+        }
+        if (g_current_online_mode == ONLINE_MODE_NO) {
+            snprintf(offline_msg, sizeof(offline_msg),
+                     "当前为离线模式，本地没有%s，请尝试切换在线模式", query != NULL ? query : "");
+            tts_play_text(offline_msg);
+            return;
+        }
+        tts_play_audio_file(FALLBACK_UNMATCHED_WAV);
+        return;
+    }
+
+    format_voice_track_intro(&track, intro, sizeof(intro));
+    player_voice_intro_arm_deferred_play(PLAYER_VOICE_DEFER_INSERT_COMMIT);
+    tts_play_text(intro);
 }
 
 int try_music_lib_play(const char *text)
@@ -55,6 +95,9 @@ int try_music_lib_play(const char *text)
         return 1;
     }
     LOGI(TAG, "搜歌关键词: %s", query);
+    if (music_server_async_start_play_query(query) == 0) {
+        return 1;
+    }
     if (player_search_insert_keyword_prepare_voice_intro(query, &track) != 0) {
         if (music_source_take_online_search_blocked()) {
             tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);

@@ -274,7 +274,7 @@ int music_source_server_parse_music_item(json_object *item_obj, MusicSourceItem 
     return 0;
 }
 
-static int music_source_server_search(const char *keyword, int page, int page_size, MusicSourceResult *result)
+int music_source_server_list_music_page(const char *keyword, int page, int page_size, MusicSourceResult *result)
 {
     int fd;
     int ret = -1;
@@ -347,6 +347,11 @@ done:
     free(payload);
     close(fd);
     return ret;
+}
+
+static int music_source_server_search(const char *keyword, int page, int page_size, MusicSourceResult *result)
+{
+    return music_source_server_list_music_page(keyword, page, page_size, result);
 }
 
 static int server_fetch_play_url(const char *source, const char *song_id, char *url_buf, size_t url_size)

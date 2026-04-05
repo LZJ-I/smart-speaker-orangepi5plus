@@ -10,22 +10,69 @@
 
 #define TAG "MUSIC-LIB"
 
-int music_lib_resolve_insert_one_after_current(const char *keyword)
+int music_lib_resolve_insert_item_after_current(const MusicSourceItem *item)
 {
-    MusicSourceItem item;
     Music_Node *anchor;
-
-    if (keyword == NULL || keyword[0] == '\0') {
-        return -1;
-    }
-    if (music_source_server_resolve_keyword(keyword, &item) != 0) {
+    if (item == NULL || item->song_name[0] == '\0') {
         return -1;
     }
     anchor = link_anchor_for_insert();
     if (anchor == NULL) {
         return -1;
     }
-    return link_insert_node_after(anchor, item.source, item.song_id, item.singer, item.song_name, item.play_url);
+    return link_insert_node_after(anchor, item->source, item->song_id, item->singer, item->song_name,
+                                  (item->play_url[0] != '\0') ? item->play_url : NULL);
+}
+
+int music_lib_insert_search_result_after_current(MusicSourceResult *result, int *out_added)
+{
+    Music_Node *anchor;
+    int i;
+    if (result == NULL) {
+        return -1;
+    }
+    if (out_added != NULL) {
+        *out_added = 0;
+    }
+    if (result->count <= 0) {
+        if (result->online_search_disabled) {
+            music_source_set_online_search_blocked(1);
+        }
+        music_source_free_result(result);
+        return -1;
+    }
+    anchor = link_anchor_for_insert();
+    if (anchor == NULL) {
+        music_source_free_result(result);
+        return -1;
+    }
+    for (i = 0; i < result->count; ++i) {
+        const MusicSourceItem *it = &result->items[i];
+        const char *pu = (it->play_url[0] != '\0') ? it->play_url : NULL;
+        if (link_insert_node_after(anchor, it->source, it->song_id, it->singer, it->song_name, pu) != 0) {
+            music_source_free_result(result);
+            return -1;
+        }
+        anchor = anchor->next;
+    }
+    if (out_added != NULL) {
+        *out_added = (int)result->count;
+    }
+    music_source_free_result(result);
+    memset(result, 0, sizeof(*result));
+    return 0;
+}
+
+int music_lib_resolve_insert_one_after_current(const char *keyword)
+{
+    MusicSourceItem item;
+    if (keyword == NULL || keyword[0] == '\0') {
+        return -1;
+    }
+    if (music_source_server_resolve_keyword(keyword, &item) != 0) {
+        return -1;
+    }
+    return music_lib_resolve_insert_item_after_current(&item);
 }
 
 #define OFFLINE_LOAD_PAGE 2048

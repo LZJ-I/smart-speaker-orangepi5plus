@@ -4,6 +4,7 @@
 #include <signal.h>
 
 #include "link.h"
+#include "music_source.h"
 #include "player_constants.h"
 #include "player_types.h"
 
@@ -36,6 +37,8 @@ int player_play_url(const char *url);
 int player_search_and_play_keyword(const char *keyword);
 int player_search_insert_keyword_and_play(const char *keyword);
 int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_Node *out_track);
+int player_play_query_resolve_done(const MusicSourceItem *item, const char *keyword, Music_Node *out_track);
+int player_play_query_search_done(MusicSourceResult *result, const char *keyword, Music_Node *out_track);
 void player_voice_intro_commit_insert_play(void);
 int player_search_hot_random_prepare_for_tts(Music_Node *out_track);
 void player_voice_intro_commit_hot_random_play(void);

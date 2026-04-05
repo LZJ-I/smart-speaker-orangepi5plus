@@ -3,6 +3,11 @@
 
 #include <stddef.h>
 
+#include "music_source.h"
+
+int music_lib_resolve_insert_item_after_current(const MusicSourceItem *item);
+int music_lib_insert_search_result_after_current(MusicSourceResult *result, int *out_added);
+
 int music_lib_search_play_first(const char *keyword);
 int music_lib_search_fill_list(const char *keyword, int max_count);
 int music_lib_get_url_for_music(const char *music_name, char *url_buf, size_t url_size);

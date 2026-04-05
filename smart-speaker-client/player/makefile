@@ -27,6 +27,7 @@ OBJS = \
 	bridge/music_lib_bridge.o \
 	music_source/music_source_local.o \
 	music_source/music_source_server.o \
+	music_source/music_server_async.o \
 	music_source/music_source_manager.o \
 	../ipc/ipc_message.o \
 	../voice-assistant/llm/llm.o \

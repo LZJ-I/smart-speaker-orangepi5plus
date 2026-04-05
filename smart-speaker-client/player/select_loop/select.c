@@ -19,6 +19,7 @@
 #include "music_lib_bridge.h"
 #include "select_text.h"
 #include "select_music_llm.h"
+#include "music_server_async.h"
 
 #define TAG "SELECT"
 
@@ -451,6 +452,9 @@ void select_run(void)
         }
         if(g_player_ctrl_fd >= 0 && FD_ISSET(g_player_ctrl_fd, &TMPSET)){
             select_read_player_ctrl();
+        }
+        if (music_server_async_fd() >= 0 && FD_ISSET(music_server_async_fd(), &TMPSET)) {
+            music_server_async_on_readable();
         }
     }
 }
