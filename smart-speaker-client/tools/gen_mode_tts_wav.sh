@@ -15,4 +15,5 @@ cd voice-assistant/tts/example || exit 1
 ./tts_test -t "我没有理解您的意思，请换个说法吧。" -o "$ROOT/assets/tts/fallback_unmatched.wav"
 ./tts_test -t "在线搜歌功能尚未配置，暂不支持。" -o "$ROOT/assets/tts/online_music_unsupported.wav"
 ./tts_test -t "服务器断开，已进入离线模式" -o "$ROOT/assets/tts/server_disconnect_offline.wav"
-echo "已生成 assets/tts/mode_order.wav、assets/tts/mode_single.wav、assets/tts/fallback_unmatched.wav、assets/tts/online_music_unsupported.wav、assets/tts/server_disconnect_offline.wav"
+./tts_test -t "连接服务器失败。" -o "$ROOT/assets/tts/server_connect_failed.wav"
+echo "已生成 assets/tts/mode_order.wav、assets/tts/mode_single.wav、assets/tts/fallback_unmatched.wav、assets/tts/online_music_unsupported.wav、assets/tts/server_disconnect_offline.wav、assets/tts/server_connect_failed.wav"

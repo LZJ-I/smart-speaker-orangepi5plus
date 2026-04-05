@@ -1,3 +1,4 @@
+/* 在线 list_music 探针。固定提示音 wav（含 server_connect_failed.wav）用与 tts_test 相同链路：tools/gen_mode_tts_wav.sh */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

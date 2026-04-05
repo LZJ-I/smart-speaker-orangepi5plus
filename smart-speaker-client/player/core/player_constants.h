@@ -31,5 +31,6 @@
 #define UDISK_PATH_YES3 "/dev/sda1"
 
 #define SERVER_DISCONNECT_OFFLINE_WAV "./assets/tts/server_disconnect_offline.wav"
+#define SERVER_CONNECT_FAILED_WAV "./assets/tts/server_connect_failed.wav"
 
 #endif
