@@ -1,12 +1,14 @@
 CC = gcc
 TARGET = ../../asr_kws_process
 CFLAGS = -Wall -g -DPROCESS_MODE -I../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -I../common -I../asr -I../kws -I../llm -I.. -I../../ipc
-LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib -lsamplerate -ljson-c
+SHERPA_LIB = ../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib
+LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L$(SHERPA_LIB) -lsamplerate -ljson-c
+RPATH = -Wl,-rpath,'$$ORIGIN/3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib'
 
 all: $(TARGET)
 
 $(TARGET): main.o asr_kws_pipe.o ../common/alsa.o ../common/mysamplerate.o ../asr/sherpa_asr.o ../kws/sherpa_kws.o ../llm/llm.o ../../ipc/ipc_message.o
-	$(CC) -o $(TARGET) main.o asr_kws_pipe.o ../common/alsa.o ../common/mysamplerate.o ../asr/sherpa_asr.o ../kws/sherpa_kws.o ../llm/llm.o ../../ipc/ipc_message.o $(LIBS)
+	$(CC) -o $(TARGET) main.o asr_kws_pipe.o ../common/alsa.o ../common/mysamplerate.o ../asr/sherpa_asr.o ../kws/sherpa_kws.o ../llm/llm.o ../../ipc/ipc_message.o $(LIBS) $(RPATH)
 	rm -f main.o asr_kws_pipe.o ../common/alsa.o ../common/mysamplerate.o ../asr/sherpa_asr.o ../kws/sherpa_kws.o ../llm/llm.o ../../ipc/ipc_message.o
 
 main.o: main.c
