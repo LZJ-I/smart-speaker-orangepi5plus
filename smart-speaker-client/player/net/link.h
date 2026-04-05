@@ -13,6 +13,9 @@
 
 
 typedef struct Node{
+    char title[MUSIC_MAX_NAME];
+    char subtitle[SINGER_MAX_NAME];
+    char id[MUSIC_ID_MAX];
     char song_name[MUSIC_MAX_NAME];
     char singer[SINGER_MAX_NAME];
     char source[MUSIC_SOURCE_MAX];
@@ -27,9 +30,13 @@ extern Music_Node* g_music_head;       // 链表头
 
 // 初始化链表
 int link_init();
+int link_add_music_meta(const char *source, const char *id, const char *title, const char *subtitle,
+                        const char *play_url);
 int link_add_music_lib(const char *source, const char *id, const char *artist, const char *name,
                        const char *play_url);
 Music_Node *link_anchor_for_insert(void);
+int link_insert_node_after_meta(Music_Node *anchor, const char *source, const char *id,
+                                const char *title, const char *subtitle, const char *play_url);
 int link_insert_node_after(Music_Node *anchor, const char *source, const char *id, const char *artist,
                            const char *name, const char *play_url);
 int link_get_source_id(const char *song_name, const char *singer, char *source_buf, size_t source_size, char *id_buf, size_t id_size);
@@ -43,6 +50,8 @@ void link_traverse_list(char** music_list);
 int link_get_next_music(const char *cur_source, const char *cur_song_id, int mode, int force_advance, Music_Node *next_music);
 // 清空链表
 void link_clear_list(void);
+// 调试：将当前链表写入 data（需 SMART_SPEAKER_LINK_DEBUG=1）
+void link_debug_dump_list(void);
 // 根据当前歌曲，找到上一首歌
 int link_get_prev_music(const char *cur_source, const char *cur_song_id, int wrap_at_head, Music_Node *prev_music);
 

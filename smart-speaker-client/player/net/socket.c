@@ -21,6 +21,7 @@
 #include "device.h"
 #include "link.h"
 #include "player.h"
+#include "runtime_config.h"
 #include "socket_report.h"
 
 #define TAG "SOCKET"
@@ -31,17 +32,19 @@ static int g_socket_report_thread_started;
 
 void socket_close_connection(void)
 {
+    int fd;
+
     if (g_socket_fd < 0) {
         return;
     }
-    FD_CLR(g_socket_fd, &READSET);
+    fd = g_socket_fd;
+    FD_CLR(fd, &READSET);
     if (g_socket_report_thread_started) {
-        pthread_cancel(g_report_tid);
-        pthread_join(g_report_tid, NULL);
+        socket_report_stop_thread(fd, g_report_tid);
         g_socket_report_thread_started = 0;
     }
-    shutdown(g_socket_fd, SHUT_RDWR);
-    close(g_socket_fd);
+    shutdown(fd, SHUT_RDWR);
+    close(fd);
     g_socket_fd = -1;
     update_max_fd();
 }
@@ -84,26 +87,12 @@ static int socket_connect_with_timeout(int fd, const struct sockaddr_in *server_
 
 static const char *socket_server_ip(void)
 {
-    const char *value = getenv(SERVER_IP_ENV);
-    if (value != NULL && value[0] != '\0') {
-        return value;
-    }
-    return SERVER_IP;
+    return player_runtime_server_ip();
 }
 
 static int socket_server_port(void)
 {
-    const char *value = getenv(SERVER_PORT_ENV);
-    char *end = NULL;
-    long port;
-    if (value == NULL || value[0] == '\0') {
-        return SERVER_PORT;
-    }
-    port = strtol(value, &end, 10);
-    if (end == value || *end != '\0' || port <= 0 || port > 65535) {
-        return SERVER_PORT;
-    }
-    return (int)port;
+    return player_runtime_server_port();
 }
 
 static void socket_handle_disconnect(void)
@@ -521,13 +510,30 @@ void socket_set_single_mode()
 // 处理服务器获取当前音乐列表请求（主动上传新的歌曲）
 void socket_upload_music_list()
 {
-    json_object *json = json_object_new_object();
-    json_object *music_arr = json_object_new_array();
-
+    // 遍历链表
+    char* music_list[GET_MAX_MUSIC];
+    link_traverse_list(music_list);
+    // 创建json
+    json_object *json = json_object_new_object();  
     json_object_object_add(json, "cmd", json_object_new_string("upload_music_list"));
-    link_playlist_append_display_json_array(music_arr);
-    json_object_object_add(json, "music", music_arr);
-    socket_send_data(json);
+    json_object *music_arr = json_object_new_array();  // 创建音乐数组
+    for(int i = 0; i < GET_MAX_MUSIC; i++)  // 将歌名插入数组
+    {
+        if(music_list[i] == NULL)
+            break;
+        json_object_array_add(music_arr, json_object_new_string(music_list[i]));
+    }
+    json_object_object_add(json, "music", music_arr);  // 将数组添加到json
+    // 发送给服务器
+    if(json != NULL)
+        socket_send_data(json);
+
+    // 释放数组、 释放json
+    json_object_put(json);  // 释放json
+    for(int i = 0; i<GET_MAX_MUSIC; i++)
+    {
+        free(music_list[i]);
+    }
 }
 
 
