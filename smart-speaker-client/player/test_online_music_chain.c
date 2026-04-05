@@ -38,13 +38,20 @@ int main(int argc, char **argv)
     }
 
     char url[1024];
-    if (srv->get_url("server", r.items[0].song_id, url, sizeof(url)) != 0) {
+    if (srv->get_url(r.items[0].source,
+                     r.items[0].id[0] != '\0' ? r.items[0].id : r.items[0].song_id,
+                     url, sizeof(url)) != 0) {
         fprintf(stderr, "get_url 失败\n");
         srv->free_result(&r);
         return 1;
     }
 
-    printf("path=%s\nurl=%s\n", r.items[0].song_id, url);
+    printf("source=%s\nid=%s\ntitle=%s\nsubtitle=%s\nurl=%s\n",
+           r.items[0].source,
+           r.items[0].id[0] != '\0' ? r.items[0].id : r.items[0].song_id,
+           r.items[0].title[0] != '\0' ? r.items[0].title : r.items[0].song_name,
+           r.items[0].subtitle[0] != '\0' ? r.items[0].subtitle : r.items[0].singer,
+           url);
     srv->free_result(&r);
 
     if (do_play) {
