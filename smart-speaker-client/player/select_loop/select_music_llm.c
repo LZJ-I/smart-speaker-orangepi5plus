@@ -100,20 +100,28 @@ int try_music_lib_play_playlist(const char *text)
     if (music_server_async_start_play_query(query, source) == 0) {
         return 1;
     }
-    if (player_search_insert_keyword_prepare_voice_intro(query, &track) != 0) {
-        if (music_source_take_online_search_blocked()) {
-            player_voice_cmd_clear_followup();
-            tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);
-            return 1;
+    {
+        char pl_kw[256];
+        const char *insert_kw = query;
+        select_text_normalize_playlist_keyword(query, pl_kw, sizeof(pl_kw));
+        if (pl_kw[0] != '\0') {
+            insert_kw = pl_kw;
         }
-        if (g_current_online_mode == ONLINE_MODE_NO) {
-            player_voice_cmd_clear_followup();
-            snprintf(offline_msg, sizeof(offline_msg),
-                     "当前为离线模式，本地没有%s，请尝试切换在线模式", query);
-            tts_play_text(offline_msg);
-            return 1;
+        if (player_search_insert_keyword_prepare_voice_intro(insert_kw, &track) != 0) {
+            if (music_source_take_online_search_blocked()) {
+                player_voice_cmd_clear_followup();
+                tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);
+                return 1;
+            }
+            if (g_current_online_mode == ONLINE_MODE_NO) {
+                player_voice_cmd_clear_followup();
+                snprintf(offline_msg, sizeof(offline_msg),
+                         "当前为离线模式，本地没有%s，请尝试切换在线模式", query);
+                tts_play_text(offline_msg);
+                return 1;
+            }
+            return 0;
         }
-        return 0;
     }
     format_voice_track_intro(&track, intro, sizeof(intro));
     player_voice_intro_arm_deferred_play(PLAYER_VOICE_DEFER_INSERT_COMMIT);

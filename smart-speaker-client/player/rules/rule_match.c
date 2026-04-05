@@ -255,7 +255,7 @@ static int match_play_query(const char *text)
     if (!select_text_extract_music_query_source(text, q, sizeof(q), NULL, 0)) {
         return 0;
     }
-    if (q[0] == '\0' || strstr(q, "\xe6\xad\x8c\xe5\x8d\x95") != NULL) {
+    if (q[0] == '\0' || select_text_is_playlist_query(q)) {
         return 0;
     }
     if (is_generic_query(q) && is_start_only_request(text)) {
@@ -273,7 +273,7 @@ static int match_play_playlist(const char *text)
     if (!select_text_extract_music_query_source(text, q, sizeof(q), NULL, 0)) {
         return 0;
     }
-    if (q[0] == '\0' || strstr(q, "\xe6\xad\x8c\xe5\x8d\x95") == NULL) {
+    if (q[0] == '\0' || !select_text_is_playlist_query(q)) {
         return 0;
     }
     if (is_generic_query(q) && is_start_only_request(text)) {

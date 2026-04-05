@@ -310,10 +310,18 @@ int select_text_is_hot_generic_query(const char *query)
 
 int select_text_is_playlist_query(const char *query)
 {
+    size_t len;
     if (query == NULL || query[0] == '\0') {
         return 0;
     }
-    return strstr(query, "歌单") != NULL;
+    if (strstr(query, "歌单") != NULL) {
+        return 1;
+    }
+    len = strlen(query);
+    if (len > strlen("的歌") && strcmp(query + len - strlen("的歌"), "的歌") == 0) {
+        return 1;
+    }
+    return 0;
 }
 
 void select_text_normalize_playlist_keyword(const char *query, char *out, size_t out_size)
@@ -338,6 +346,10 @@ void select_text_normalize_playlist_keyword(const char *query, char *out, size_t
     } else if (strlen(out) >= strlen("歌单") &&
                strcmp(out + strlen(out) - strlen("歌单"), "歌单") == 0) {
         out[strlen(out) - strlen("歌单")] = '\0';
+    }
+    if (strlen(out) >= strlen("的歌") &&
+        strcmp(out + strlen(out) - strlen("的歌"), "的歌") == 0) {
+        out[strlen(out) - strlen("的歌")] = '\0';
     }
     select_text_trim(out);
 }
