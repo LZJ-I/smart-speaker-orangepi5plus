@@ -12,4 +12,5 @@
 - `docs/语音播放与IPC问题修复总结.md`（TTS/ASR IPC、尾音、打断、静音覆盖等修复汇总）
 - `docs/smart-speaker-client-player-三进程播放与分页状态机技术基线.md`（播放器三进程、分页、模式语义、一致性基线）
 - `docs/smart-speaker-client-player-运行时调试与框架知识总结.md`（本轮问题根因、架构约束、调试方法论）
+- `docs/smart-speaker-音乐申请链路与存储.md`（**歌曲/歌单/歌手** 请求链路：TCP→C++→Node/Rust；客户端链表与共享内存；服务端缓存与本地曲库）
 

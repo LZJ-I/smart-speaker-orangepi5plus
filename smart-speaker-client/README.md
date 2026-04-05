@@ -49,18 +49,21 @@ sudo apt install -y \
   gstreamer1.0-tools \
   gstreamer1.0-alsa \
   gstreamer1.0-plugins-base \
-  gstreamer1.0-plugins-good
+  gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-ugly \
+  gstreamer1.0-libav
 ```
 
-MP3 等解码仍可能需要：`gstreamer1.0-plugins-ugly`。
+- **MP3 等**：常依赖 `gstreamer1.0-plugins-good` / `gstreamer1.0-plugins-ugly`（上表已一并安装）。
+- **AAC（在线 URL 常见 `.aac` / MPEG-4 AAC）**：依赖 **`gstreamer1.0-libav`**（`avdec_aac`）。若不想拉 FFmpeg 相关依赖，可改用 `gstreamer1.0-plugins-bad`（含 faad），二选一即可；验证：`gst-inspect-1.0 avdec_aac` 或 `gst-inspect-1.0 faad`。
 
 **GStreamer 运行期与 `playbin create fail`**：日志里 `(E) GST playbin create fail` 表示 `gst_element_factory_make("playbin")` 失败，**与歌曲 URL、在线/本地无关**，一般是系统里 **没有加载 `playbin` 插件**（`playbin` 在 **`gstreamer1.0-plugins-base`** 的 `libgstplayback.so` 中）。仅安装 `libgstreamer1.0-dev` 等开发包**不会**把插件装进运行环境，板子上需额外安装例如：
 
 ```bash
-sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly
+sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-libav
 ```
 
-MP3 等解码常依赖 `good` / `ugly`。验证方式二选一：`sudo apt install gstreamer1.0-tools` 后执行 `gst-inspect-1.0 playbin`（**未装该包时会出现 `command not found`，属正常**）；或直接看插件目录是否存在 `libgstplayback.so`，例如 `ls /usr/lib/aarch64-linux-gnu/gstreamer-1.0/`（架构不同则把 `aarch64-linux-gnu` 换成本机 `gcc -print-multiarch` 输出）。
+验证方式二选一：`sudo apt install gstreamer1.0-tools` 后执行 `gst-inspect-1.0 playbin`（**未装该包时会出现 `command not found`，属正常**）；或直接看插件目录是否存在 `libgstplayback.so`，例如 `ls /usr/lib/aarch64-linux-gnu/gstreamer-1.0/`（架构不同则把 `aarch64-linux-gnu` 换成本机 `gcc -print-multiarch` 输出）。
 
 **服务端曲库目录**：音频文件若直接放在曲库**根目录**（非 `歌手名/歌曲.mp3` 结构），`list_music` / `search_music` 返回里 **`singer` 可能为空**，属当前扫描逻辑预期。
 
@@ -130,7 +133,7 @@ make
 - **恢复为头文件宏默认**：`unset 变量名`（例如 `unset SMART_SPEAKER_SERVER_IP`），然后重新开 `./run`。
 - **长期默认**：把 `export ...` 写进 `~/.bashrc` 或 systemd service 的 `Environment=`，按你的部署方式选择。
 
-**GStreamer**：若存在仓库内 `3rdparty/gstreamer-alsa/.../gstreamer-1.0` 插件目录，启动时会把该目录**前置**写入 `GST_PLUGIN_PATH`（环境已有则用 `新路径:旧路径`）。也可自行预先 `export GST_PLUGIN_PATH=...`。
+**GStreamer**：若存在仓库内 `3rdparty/gstreamer-alsa/.../gstreamer-1.0` 插件目录，启动时会设置 `GST_PLUGIN_PATH` 为 **`bundled : 系统插件目录 : 原环境变量`**（系统目录为本机存在的 `/usr/lib/<multiarch>/gstreamer-1.0` 等之一），避免仅指向 bundled 时**扫不到**系统里的 AAC 解码等插件。也可自行预先 `export GST_PLUGIN_PATH=...`。
 
 **示例**
 
