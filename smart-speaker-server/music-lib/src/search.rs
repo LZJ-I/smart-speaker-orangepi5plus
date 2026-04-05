@@ -219,7 +219,7 @@ pub fn search_netease_music_paged(keyword: &str, page: u32, page_size: u32) -> R
 /// 
 /// # 参数
 /// - keyword: 搜索关键词
-/// - platform: 平台 ("tx" 为 QQ 音乐, "wy" 为网易云音乐, "auto" 优先 QQ 再网易云)
+/// - platform: 平台 ("tx" 为 QQ 音乐, "wy" 为网易云音乐, "auto" 优先网易云再 QQ，与部署文档一致)
 /// 
 /// # 返回
 /// 成功时返回歌曲列表，失败时返回错误信息
@@ -245,12 +245,10 @@ pub fn search_music_paged(keyword: &str, platform: &str, page: u32, page_size: u
     match platform {
         "tx" => search_qq_music_paged(keyword, page, page_size),
         "wy" => search_netease_music_paged(keyword, page, page_size),
-        "auto" => {
-            match search_qq_music_paged(keyword, page, page_size) {
-                Ok(ret) if !ret.songs.is_empty() => Ok(ret),
-                _ => search_netease_music_paged(keyword, page, page_size),
-            }
-        }
+        "auto" => match search_netease_music_paged(keyword, page, page_size) {
+            Ok(ret) if !ret.songs.is_empty() => Ok(ret),
+            _ => search_qq_music_paged(keyword, page, page_size),
+        },
         _ => unreachable!("平台验证已通过"),
     }
 }

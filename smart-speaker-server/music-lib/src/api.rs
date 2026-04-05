@@ -5,6 +5,9 @@ use std::env;
 
 const DEFAULT_API_URL: &str = "https://source.shiqianjiang.cn/api/music";
 
+/// 与洛雪音源脚本一致：未设置环境变量时使用 `lx-music-request/<version>` 风格。
+const DEFAULT_LX_USER_AGENT: &str = "lx-music-request/2.12.0";
+
 pub fn music_api_url() -> String {
     env::var("SMART_SPEAKER_MUSIC_API_URL")
         .ok()
@@ -24,8 +27,8 @@ pub fn music_api_key() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// 支持的下载平台
-const SUPPORTED_DOWNLOAD_SOURCES: &[&str] = &["kw", "mg", "kg", "tx", "wy"];
+/// 支持的下载平台（与常见洛雪脚本 `MUSIC_SOURCE` 对齐）
+const SUPPORTED_DOWNLOAD_SOURCES: &[&str] = &["kw", "mg", "kg", "tx", "wy", "git"];
 
 /// 酷我音乐 (kw) 支持的音质
 const KW_QUALITIES: &[&str] = &["128k", "320k", "flac", "flac24bit", "hires"];
@@ -41,6 +44,9 @@ const TX_QUALITIES: &[&str] = &["128k", "320k", "flac", "flac24bit", "hires", "a
 
 /// 网易云音乐 (wy) 支持的音质
 const WY_QUALITIES: &[&str] = &["128k", "320k", "flac", "flac24bit", "hires", "atmos", "master"];
+
+/// Gitee/Git 源 (git) 支持的音质
+const GIT_QUALITIES: &[&str] = &["128k", "320k", "flac"];
 
 /// 支持的音质（所有平台的合集）
 const SUPPORTED_QUALITIES: &[&str] = &[
@@ -65,8 +71,23 @@ fn get_platform_qualities(source: &str) -> &'static [&'static str] {
         "kg" => KG_QUALITIES,
         "tx" => TX_QUALITIES,
         "wy" => WY_QUALITIES,
+        "git" => GIT_QUALITIES,
         _ => &[],
     }
+}
+
+fn url_request_client() -> Result<Client, String> {
+    let ua = env::var("SMART_SPEAKER_MUSIC_USER_AGENT")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_LX_USER_AGENT.to_string());
+
+    Client::builder()
+        .user_agent(ua)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| e.to_string())
 }
 
 /// 验证某个平台是否支持指定音质
@@ -136,13 +157,9 @@ pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<Strin
         base, source, song_id, quality
     );
 
-    let resp = Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        )
-        .build()
-        .map_err(|e| e.to_string())?
+    let resp = url_request_client()?
         .get(&url)
+        .header("Content-Type", "application/json")
         .header("X-API-Key", api_key)
         .send()
         .map_err(|e| e.to_string())?;
