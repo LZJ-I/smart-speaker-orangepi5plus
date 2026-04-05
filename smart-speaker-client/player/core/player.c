@@ -1107,6 +1107,9 @@ static int player_ensure_sdcard_mounted(void)
     }
     if (mount(udisk_name, SDCARD_MOUNT_PATH, "exfat", 0, NULL) != 0 &&
         mount(udisk_name, SDCARD_MOUNT_PATH, NULL, 0, NULL) != 0) {
+        if (path_is_mounted_at(SDCARD_MOUNT_PATH)) {
+            return 0;
+        }
         return -1;
     }
     return 0;

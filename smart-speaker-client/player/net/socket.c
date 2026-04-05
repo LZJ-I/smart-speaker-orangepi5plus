@@ -108,9 +108,16 @@ static int socket_server_port(void)
 
 static void socket_handle_disconnect(void)
 {
+    if (g_socket_fd < 0) {
+        return;
+    }
     socket_close_connection();
+    if (player_env_forces_offline()) {
+        return;
+    }
     LOGW(TAG, "服务器断开，进入离线模式");
     player_offline_init_storage_and_library(1);
+    tts_play_text("服务器断开，已进入离线模式");
 }
 
 // 初始化socket连接
