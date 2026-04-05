@@ -47,6 +47,7 @@ static player_playlist_ctx_t g_playlist_ctx = {
 static volatile sig_atomic_t g_playlist_eof_flag = 0;
 static volatile sig_atomic_t g_child_exit_flag = 0;
 static volatile sig_atomic_t g_eof_autostart_suppressed = 0;
+static volatile sig_atomic_t g_voice_intro_defer = PLAYER_VOICE_DEFER_NONE;
 static int g_gst_cmd_fifo_fd = -1;
 static int player_write_fifo(const char *cmd);
 static void asr_kws_switch_offline_mode(void);
@@ -639,7 +640,21 @@ int player_search_and_play_keyword(const char *keyword)
     return (player_prepare_keyword_playlist(keyword, 1) > 0) ? 0 : -1;
 }
 
-int player_search_insert_keyword_and_play(const char *keyword)
+void player_voice_intro_arm_deferred_play(int kind)
+{
+    if (kind == PLAYER_VOICE_DEFER_INSERT_COMMIT || kind == PLAYER_VOICE_DEFER_HOT_RANDOM) {
+        g_voice_intro_defer = (sig_atomic_t)kind;
+    }
+}
+
+int player_voice_intro_consume_deferred_play(void)
+{
+    int k = (int)g_voice_intro_defer;
+    g_voice_intro_defer = PLAYER_VOICE_DEFER_NONE;
+    return k;
+}
+
+int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_Node *out_track)
 {
     Shm_Data s;
     Music_Node anchor;
@@ -671,6 +686,16 @@ int player_search_insert_keyword_and_play(const char *keyword)
     update_shm_current_song(&s, &next_song);
     shm_set(&s);
 
+    if (out_track != NULL) {
+        *out_track = next_song;
+    }
+    return 0;
+}
+
+void player_voice_intro_commit_insert_play(void)
+{
+    Shm_Data s;
+
     shm_get(&s);
     if (pid_is_alive(s.child_pid)) {
         g_current_state = PLAY_STATE_PLAY;
@@ -680,10 +705,18 @@ int player_search_insert_keyword_and_play(const char *keyword)
     } else {
         player_start_play();
     }
+}
+
+int player_search_insert_keyword_and_play(const char *keyword)
+{
+    if (player_search_insert_keyword_prepare_voice_intro(keyword, NULL) != 0) {
+        return -1;
+    }
+    player_voice_intro_commit_insert_play();
     return 0;
 }
 
-int player_search_and_play_hot_random(void)
+int player_search_hot_random_prepare_for_tts(Music_Node *out_track)
 {
     const char *keyword = "热门";
     int total_pages = 0;
@@ -693,6 +726,9 @@ int player_search_and_play_hot_random(void)
     int i = 0;
     Music_Node picked_song;
     Shm_Data s;
+
+    /* search_fill_list 会清空链表，须先停播，避免子进程仍引用已释放节点 */
+    player_stop_play();
 
     if (music_lib_search_fill_list_page(keyword, 1, g_playlist_ctx.page_size, &total_pages, &filled_count) != 0 || filled_count <= 0) {
         return -1;
@@ -736,8 +772,24 @@ int player_search_and_play_hot_random(void)
     update_shm_current_song(&s, &picked_song);
     shm_set(&s);
 
+    if (out_track != NULL) {
+        *out_track = picked_song;
+    }
+    return 0;
+}
+
+void player_voice_intro_commit_hot_random_play(void)
+{
     player_stop_play();
     player_start_play();
+}
+
+int player_search_and_play_hot_random(void)
+{
+    if (player_search_hot_random_prepare_for_tts(NULL) != 0) {
+        return -1;
+    }
+    player_voice_intro_commit_hot_random_play();
     return 0;
 }
 

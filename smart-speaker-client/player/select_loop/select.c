@@ -364,7 +364,16 @@ static void select_read_player_ctrl(void)
     }
     else if (strstr(buf, "tts:done") != NULL)
     {
+        int defer = player_voice_intro_consume_deferred_play();
         LOGI(TAG, "收到TTS结束事件");
+        if (defer == PLAYER_VOICE_DEFER_INSERT_COMMIT) {
+            player_voice_intro_commit_insert_play();
+            return;
+        }
+        if (defer == PLAYER_VOICE_DEFER_HOT_RANDOM) {
+            player_voice_intro_commit_hot_random_play();
+            return;
+        }
         if (player_audio_focus_should_resume() && g_current_state != PLAY_STATE_STOP)
         {
             player_audio_focus_prepare_resume();

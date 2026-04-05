@@ -3,8 +3,13 @@
 
 #include <signal.h>
 
+#include "link.h"
 #include "player_constants.h"
 #include "player_types.h"
+
+#define PLAYER_VOICE_DEFER_NONE 0
+#define PLAYER_VOICE_DEFER_INSERT_COMMIT 1
+#define PLAYER_VOICE_DEFER_HOT_RANDOM 2
 
 int run_gst_player(const char *initial_uri);
 
@@ -30,6 +35,12 @@ void player_singer_play(const char *singer);
 int player_play_url(const char *url);
 int player_search_and_play_keyword(const char *keyword);
 int player_search_insert_keyword_and_play(const char *keyword);
+int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_Node *out_track);
+void player_voice_intro_commit_insert_play(void);
+int player_search_hot_random_prepare_for_tts(Music_Node *out_track);
+void player_voice_intro_commit_hot_random_play(void);
+void player_voice_intro_arm_deferred_play(int kind);
+int player_voice_intro_consume_deferred_play(void);
 int player_search_and_play_hot_random(void);
 int player_simulate_song_finished(void);
 int player_prepare_keyword_playlist(const char *keyword, int auto_start);
