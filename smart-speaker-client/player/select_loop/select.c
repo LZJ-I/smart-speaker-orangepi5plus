@@ -283,6 +283,9 @@ static void select_read_asr(void)
     case RULE_CMD_SWITCH_ONLINE:
         player_switch_online_mode();
         break;
+    case RULE_CMD_NOOP:
+        resume_after_handle = had_music_before_wakeup;
+        break;
     case RULE_CMD_NONE:
     default:
         if (g_current_online_mode == ONLINE_MODE_NO) {

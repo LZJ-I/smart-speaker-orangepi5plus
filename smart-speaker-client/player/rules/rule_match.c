@@ -159,6 +159,37 @@ static int match_switch_online(const char *text)
     return has_any(text, k);
 }
 
+static int match_noop_dismiss(const char *text)
+{
+    char t[256];
+    size_t len;
+    static const char *const phrases[] = {
+        "没事", "没事儿", "没有事", "没事了", "没别的事", "没啥事", "没什么事",
+        "不要紧", "没关系", "不用了", "没事儿啦", "没事啦", "算了没事", NULL,
+    };
+    int i = 0;
+    if (text == NULL) {
+        return 0;
+    }
+    len = strlen(text);
+    if (len == 0 || len >= sizeof(t)) {
+        return 0;
+    }
+    memcpy(t, text, len + 1);
+    trim_ascii_blank(t);
+    strip_tail_particles(t);
+    if (t[0] == '\0') {
+        return 0;
+    }
+    while (phrases[i] != NULL) {
+        if (strcmp(t, phrases[i]) == 0) {
+            return 1;
+        }
+        ++i;
+    }
+    return 0;
+}
+
 static int match_play_start(const char *text)
 {
     static const char *const k[] = {"开始播放", "播放音乐", "播放", "开始", "放首歌", "唱首歌", NULL};
@@ -236,6 +267,7 @@ static int match_play_query(const char *text)
 }
 
 static const rule_def_t k_rules[] = {
+    {RULE_CMD_NOOP, "无指令忽略", match_noop_dismiss},
     {RULE_CMD_SWITCH_ONLINE, "切换到在线模式", match_switch_online},
     {RULE_CMD_SWITCH_OFFLINE, "切换到离线模式", match_switch_offline},
     {RULE_CMD_STOP, "停止播放", match_stop},
@@ -290,6 +322,7 @@ const char *rule_cmd_to_string(rule_cmd_t cmd)
     case RULE_CMD_PLAY_START: return "RULE_CMD_PLAY_START";
     case RULE_CMD_SWITCH_OFFLINE: return "RULE_CMD_SWITCH_OFFLINE";
     case RULE_CMD_SWITCH_ONLINE: return "RULE_CMD_SWITCH_ONLINE";
+    case RULE_CMD_NOOP: return "RULE_CMD_NOOP";
     default: return "RULE_CMD_NONE";
     }
 }
