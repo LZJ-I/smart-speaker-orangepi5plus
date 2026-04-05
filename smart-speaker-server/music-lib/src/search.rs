@@ -122,7 +122,11 @@ pub fn search_qq_music_paged(keyword: &str, page: u32, page_size: u32) -> Result
         w, page, page_size
     );
 
-    let resp = http_client()?.get(&url).send().map_err(|e| e.to_string())?;
+    let resp = http_client()?
+        .get(&url)
+        .header("Referer", "https://y.qq.com/")
+        .send()
+        .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("QQ 音乐搜索 HTTP {}", resp.status()));
     }
@@ -247,7 +251,18 @@ pub fn search_music_paged(keyword: &str, platform: &str, page: u32, page_size: u
         "wy" => search_netease_music_paged(keyword, page, page_size),
         "auto" => match search_qq_music_paged(keyword, page, page_size) {
             Ok(ret) if !ret.songs.is_empty() => Ok(ret),
-            _ => search_netease_music_paged(keyword, page, page_size),
+            Ok(ret) => {
+                eprintln!(
+                    "search auto: QQ 无命中 (keyword={} total={})，改用网易云",
+                    keyword,
+                    ret.total
+                );
+                search_netease_music_paged(keyword, page, page_size)
+            }
+            Err(e) => {
+                eprintln!("search auto: QQ 搜索失败 ({})，改用网易云", e);
+                search_netease_music_paged(keyword, page, page_size)
+            }
         },
         _ => unreachable!("平台验证已通过"),
     }

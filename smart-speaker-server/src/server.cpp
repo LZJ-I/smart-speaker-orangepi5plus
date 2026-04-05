@@ -693,8 +693,8 @@ bool Server::server_resolve_music(struct bufferevent *bev, const Json::Value &ro
     reply["song_id"] = std::string(r.song_id);
     reply["singer"] = std::string(r.singer);
     reply["song"] = std::string(r.song);
-    Server::debug("[resolve_music] keyword=%s singer=%s song=%s play_url=%s", kw.c_str(), r.singer, r.song,
-                  r.play_url);
+    Server::debug("[resolve_music] source=%s keyword=%s singer=%s song=%s play_url=%s",
+                  r.source != NULL ? r.source : "", kw.c_str(), r.singer, r.song, r.play_url);
     music_free_resolve_result(&r);
     return server_send_data(bev, reply);
 }
