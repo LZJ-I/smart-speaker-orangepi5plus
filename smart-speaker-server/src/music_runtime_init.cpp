@@ -311,12 +311,7 @@ void ensure_default_music_service_toml(const std::string &path)
     if (!out.is_open()) {
         return;
     }
-    out << "# Node 音乐子服务（server 会同步 resolver_*、music_source_script）\n"
-        << "# 均可省略，默认见 music-service/index.js readConfig：\n"
-        << "# host=127.0.0.1 port=9300 provider=lx default_source=kw\n"
-        << "# search_sources=default_source playlist_search_sources=kw,wy\n"
-        << "# resolve_quality=320k music_source_script=../music-source/lx.js\n"
-        << "# resolver_* 空则从 lx 脚本 API_URL/API_KEY\n"
+    out << "# Node 音乐子服务（由 server 启动时同步部分字段）\n"
         << "host = \"127.0.0.1\"\n"
         << "port = 9300\n"
         << "\n"
