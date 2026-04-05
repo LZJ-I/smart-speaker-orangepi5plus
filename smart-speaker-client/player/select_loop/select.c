@@ -1,6 +1,7 @@
 #include "select.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 #include <errno.h> 
 #include <string.h>
 #include "player.h"
@@ -283,9 +284,23 @@ static void select_read_asr(void)
     case RULE_CMD_SWITCH_ONLINE:
         player_switch_online_mode();
         break;
-    case RULE_CMD_NOOP:
+    case RULE_CMD_NOOP: {
+        static int noop_srand_done;
+        static const char *const noop_replies[] = {
+            "有事情再叫我哦。",
+            "那我先退下了。",
+            "好的。",
+        };
+        int idx;
+        if (!noop_srand_done) {
+            srand((unsigned)time(NULL));
+            noop_srand_done = 1;
+        }
+        idx = rand() % (int)(sizeof(noop_replies) / sizeof(noop_replies[0]));
+        tts_play_text((char *)noop_replies[idx]);
         resume_after_handle = had_music_before_wakeup;
         break;
+    }
     case RULE_CMD_NONE:
     default:
         if (g_current_online_mode == ONLINE_MODE_NO) {
