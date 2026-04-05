@@ -244,16 +244,33 @@ void link_traverse_list(char** music_list)
 {
     Music_Node* current = (g_music_head != NULL) ? g_music_head->next : NULL;
     int index = 0;
-    while (current != NULL && index < GET_MAX_MUSIC) {
+    while (current != NULL) {
         char display[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
         format_display_name(current, display, sizeof(display));
         if (music_list == NULL) {
             LOGI(TAG, "id=%s singer=%s song=%s",
                  current->song_id, current->singer, current->song_name);
         } else {
+            if (index >= GET_MAX_MUSIC) {
+                break;
+            }
             music_list[index++] = strdup(display);
         }
         current = current->next;
+    }
+}
+
+void link_playlist_append_display_json_array(struct json_object *music_arr)
+{
+    Music_Node *current;
+
+    if (music_arr == NULL || g_music_head == NULL) {
+        return;
+    }
+    for (current = g_music_head->next; current != NULL; current = current->next) {
+        char display[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
+        format_display_name(current, display, sizeof(display));
+        json_object_array_add(music_arr, json_object_new_string(display));
     }
 }
 

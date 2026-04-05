@@ -6,7 +6,9 @@
 #include "main.h"
 #include "device.h"
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <json-c/json.h>
@@ -16,21 +18,50 @@
 
 int socket_send_data(json_object *data)
 {
-    char buf[1024] = {0};
     const char *json_str = json_object_to_json_string(data);
+    size_t json_len;
+    size_t pkt_len;
+    char *buf = NULL;
+    size_t sent = 0;
+
     if (NULL == json_str) {
         LOGE(TAG, "JSON转换失败");
         json_object_put(data);
         return -1;
     }
-    int len = strlen(json_str);
-    memcpy(buf, &len, sizeof(len));
-    memcpy(buf + sizeof(len), json_str, len);
-    if (-1 == send(g_socket_fd, buf, len + sizeof(len), MSG_NOSIGNAL)) {
-        LOGE(TAG, "发送失败: %s", strerror(errno));
+    json_len = strlen(json_str);
+    if (json_len > (size_t)INT_MAX - sizeof(int)) {
+        LOGE(TAG, "JSON 过长");
         json_object_put(data);
         return -1;
     }
+    pkt_len = sizeof(int) + json_len;
+    buf = (char *)malloc(pkt_len);
+    if (buf == NULL) {
+        LOGE(TAG, "分配发送缓冲失败");
+        json_object_put(data);
+        return -1;
+    }
+    {
+        int len_i = (int)json_len;
+        memcpy(buf, &len_i, sizeof(len_i));
+    }
+    memcpy(buf + sizeof(int), json_str, json_len);
+
+    while (sent < pkt_len) {
+        ssize_t n = send(g_socket_fd, buf + sent, pkt_len - sent, MSG_NOSIGNAL);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            LOGE(TAG, "发送失败: %s", strerror(errno));
+            free(buf);
+            json_object_put(data);
+            return -1;
+        }
+        sent += (size_t)n;
+    }
+    free(buf);
     json_object_put(data);
     return 0;
 }
