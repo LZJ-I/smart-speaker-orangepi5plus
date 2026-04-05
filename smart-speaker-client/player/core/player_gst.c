@@ -9,6 +9,7 @@
 
 #include "player.h"
 #include "debug_log.h"
+#include "runtime_config.h"
 
 #define TAG "GST"
 #define FIFO_LINE_MAX 4096
@@ -33,14 +34,34 @@ typedef struct {
     size_t line_len;
 } GstPlayerData;
 
+static const char *gst_system_plugin_dir(void)
+{
+    static const char *const dirs[] = {
+        "/usr/lib/aarch64-linux-gnu/gstreamer-1.0",
+        "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
+        "/usr/lib/arm-linux-gnueabihf/gstreamer-1.0",
+        "/usr/lib/gstreamer-1.0",
+        NULL,
+    };
+    size_t i;
+
+    for (i = 0; dirs[i] != NULL; i++) {
+        if (access(dirs[i], R_OK | X_OK) == 0) {
+            return dirs[i];
+        }
+    }
+    return NULL;
+}
+
 static void setup_local_gst_plugin_path(void)
 {
     static const char *rel = "/3rdparty/gstreamer-alsa/usr/lib/aarch64-linux-gnu/gstreamer-1.0";
     char exe_path[PATH_MAX];
     char base_dir[PATH_MAX];
     char plugin_dir[PATH_MAX];
-    char merged[PATH_MAX * 2];
+    char merged[PATH_MAX * 3];
     const char *old_path;
+    const char *sys_dir;
     ssize_t n;
 
     n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
@@ -72,7 +93,21 @@ static void setup_local_gst_plugin_path(void)
     }
     if (access(plugin_dir, R_OK | X_OK) != 0) return;
 
+    sys_dir = gst_system_plugin_dir();
     old_path = getenv("GST_PLUGIN_PATH");
+    if (sys_dir != NULL) {
+        if (old_path != NULL && old_path[0] != '\0') {
+            if (snprintf(merged, sizeof(merged), "%s:%s:%s", plugin_dir, sys_dir, old_path) >= (int)sizeof(merged)) {
+                return;
+            }
+        } else {
+            if (snprintf(merged, sizeof(merged), "%s:%s", plugin_dir, sys_dir) >= (int)sizeof(merged)) {
+                return;
+            }
+        }
+        setenv("GST_PLUGIN_PATH", merged, 1);
+        return;
+    }
     if (old_path != NULL && old_path[0] != '\0') {
         if (snprintf(merged, sizeof(merged), "%s:%s", plugin_dir, old_path) >= (int)sizeof(merged)) {
             return;
@@ -85,36 +120,7 @@ static void setup_local_gst_plugin_path(void)
 
 static const char *gst_alsa_device_string(void)
 {
-    const char *e = getenv(GST_ALSA_DEVICE_ENV);
-    if (e != NULL && e[0] != '\0') {
-        return e;
-    }
-    return GST_ALSA_DEVICE;
-}
-
-/* libsoup 读 http_proxy；此前曾 unset 导致板子经 Windows Clash 时无法播 CDN */
-static void ensure_gst_http_proxy_env(void)
-{
-    static const char k_default_ics[] = "http://192.168.137.1:7897";
-    const char *cur;
-    const char *p;
-
-    if (getenv("SMART_SPEAKER_NO_GST_PROXY") != NULL)
-        return;
-    cur = getenv("http_proxy");
-    if (cur != NULL && cur[0] != '\0')
-        return;
-    p = getenv("SMART_SPEAKER_HTTP_PROXY");
-    if (p == NULL || p[0] == '\0')
-        p = k_default_ics;
-    setenv("http_proxy", p, 1);
-    setenv("HTTP_PROXY", p, 1);
-    setenv("https_proxy", p, 1);
-    setenv("HTTPS_PROXY", p, 1);
-    if (getenv("no_proxy") == NULL || getenv("no_proxy")[0] == '\0') {
-        setenv("no_proxy", "127.0.0.1,localhost,::1", 1);
-        setenv("NO_PROXY", "127.0.0.1,localhost,::1", 1);
-    }
+    return player_runtime_gst_alsa_device();
 }
 
 #define GST_HTTP_USER_AGENT \
@@ -263,7 +269,6 @@ int run_gst_player(const char *initial_uri)
     data.paused = FALSE;
     setenv("GST_GL", "disable", 1);
     setenv("DISPLAY", "", 1);
-    ensure_gst_http_proxy_env();
     setup_local_gst_plugin_path();
     gst_init(NULL, NULL);
     GstElement *asink = gst_element_factory_make("alsasink", "asink");

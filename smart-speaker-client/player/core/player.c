@@ -22,6 +22,7 @@
 #include "music_source.h"
 #include "socket.h"
 #include "debug_log.h"
+#include "runtime_config.h"
 
 #define TAG "PLAYER"
 
@@ -48,6 +49,7 @@ static volatile sig_atomic_t g_playlist_eof_flag = 0;
 static volatile sig_atomic_t g_child_exit_flag = 0;
 static volatile sig_atomic_t g_eof_autostart_suppressed = 0;
 static volatile sig_atomic_t g_voice_intro_defer = PLAYER_VOICE_DEFER_NONE;
+static volatile sig_atomic_t g_voice_cmd_followup_expected = 0;
 static int g_gst_cmd_fifo_fd = -1;
 static int player_write_fifo(const char *cmd);
 static void asr_kws_switch_offline_mode(void);
@@ -219,7 +221,11 @@ static void copy_text(char *dst, size_t dst_size, const char *src)
 static int identity_equal(const Music_Node *a, const Music_Node *b)
 {
     if (a == NULL || b == NULL) return 0;
-    return (strcmp(a->source, b->source) == 0 && strcmp(a->song_id, b->song_id) == 0);
+    if (strcmp(a->song_id, b->song_id) != 0) return 0;
+    if (strcmp(a->song_name, b->song_name) != 0) return 0;
+    if (strcmp(a->singer, b->singer) != 0) return 0;
+    if (a->source[0] != '\0' && b->source[0] != '\0' && strcmp(a->source, b->source) != 0) return 0;
+    return 1;
 }
 
 static void update_shm_current_song(Shm_Data *s, const Music_Node *node)
@@ -227,19 +233,29 @@ static void update_shm_current_song(Shm_Data *s, const Music_Node *node)
     if (s == NULL || node == NULL) return;
     copy_text(s->current_music, sizeof(s->current_music), node->song_name);
     copy_text(s->current_singer, sizeof(s->current_singer), node->singer);
+    copy_text(s->current_source, sizeof(s->current_source), node->source);
     copy_text(s->current_song_id, sizeof(s->current_song_id), node->song_id);
 }
 
 static int resolve_play_url(const Music_Node *song, char *url, size_t url_size)
 {
+    const char *src_for_url;
     if (song == NULL || url == NULL || url_size == 0) return -1;
     url[0] = '\0';
     if (song->play_url[0] != '\0') {
         copy_text(url, url_size, song->play_url);
         return (url[0] != '\0') ? 0 : -1;
     }
-    if (music_lib_get_url_by_source_id(song->source, song->song_id, url, url_size) == 0 && url[0] != '\0') {
+    src_for_url = song->source;
+    if ((src_for_url == NULL || src_for_url[0] == '\0') && g_current_online_mode == ONLINE_MODE_YES) {
+        src_for_url = "kw";
+    }
+    if (music_lib_get_url_by_source_id(src_for_url, song->song_id, url, url_size) == 0 && url[0] != '\0') {
         return 0;
+    }
+    /* 在线非本地曲：禁止按「歌手/歌名」去链表里找或拼 U 盘路径（翻页后链表已换，常误匹配 local） */
+    if (g_current_online_mode == ONLINE_MODE_YES && strcmp(song->source, "local") != 0) {
+        return -1;
     }
     if (song->singer[0] != '\0') {
         char full_name[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
@@ -419,7 +435,7 @@ static void child_process(Music_Node *start_song)
                     copy_text(current_song.song_id, sizeof(current_song.song_id), s.current_song_id);
                     copy_text(current_song.song_name, sizeof(current_song.song_name), s.current_music);
                     copy_text(current_song.singer, sizeof(current_song.singer), s.current_singer);
-                    current_song.source[0] = '\0';
+                    copy_text(current_song.source, sizeof(current_song.source), s.current_source);
                     continue;
                 }
             }
@@ -570,6 +586,21 @@ void player_suspend_for_tts(void)
     LOGI(TAG, "暂停播放");
 }
 
+void player_voice_cmd_expect_followup(void)
+{
+    g_voice_cmd_followup_expected = 1;
+}
+
+void player_voice_cmd_clear_followup(void)
+{
+    g_voice_cmd_followup_expected = 0;
+}
+
+int player_voice_cmd_followup_pending(void)
+{
+    return g_voice_cmd_followup_expected != 0;
+}
+
 int player_playlist_load_next_page(void)
 {
     int total_pages = 0;
@@ -577,12 +608,10 @@ int player_playlist_load_next_page(void)
     int next_page;
     int tries = 0;
     const char *search_kw;
-    if (g_current_online_mode == ONLINE_MODE_YES) {
-        search_kw = "";
-    } else {
-        if (g_playlist_ctx.keyword[0] == '\0') return -1;
-        search_kw = g_playlist_ctx.keyword;
+    if (g_playlist_ctx.keyword[0] == '\0') {
+        return -1;
     }
+    search_kw = g_playlist_ctx.keyword;
     next_page = g_playlist_ctx.current_page + 1;
     if (g_playlist_ctx.total_pages > 0 && next_page > g_playlist_ctx.total_pages) next_page = 1;
     while (tries < (g_playlist_ctx.total_pages > 0 ? g_playlist_ctx.total_pages : 3)) {
@@ -654,6 +683,11 @@ int player_voice_intro_consume_deferred_play(void)
     return k;
 }
 
+int player_voice_intro_defer_pending(void)
+{
+    return g_voice_intro_defer != PLAYER_VOICE_DEFER_NONE;
+}
+
 static int player_voice_intro_shm_after_insert(Music_Node *out_track, const char *playlist_keyword, int set_playlist_ctx)
 {
     Shm_Data s;
@@ -708,6 +742,18 @@ int player_play_query_search_done(MusicSourceResult *result, const char *keyword
         return -1;
     }
     return player_voice_intro_shm_after_insert(out_track, keyword, 1);
+}
+
+int player_play_query_playlist_done(MusicSourceResult *result, const char *keyword, Music_Node *out_track)
+{
+    int n = 0;
+    if (result == NULL || keyword == NULL || keyword[0] == '\0') {
+        return -1;
+    }
+    if (music_lib_insert_search_result_after_current(result, &n) != 0 || n <= 0) {
+        return -1;
+    }
+    return player_voice_intro_shm_after_insert(out_track, keyword, 0);
 }
 
 int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_Node *out_track)
@@ -1181,7 +1227,7 @@ int player_offline_init_storage_and_library(int reset_player)
 
 void player_apply_env_mode(void)
 {
-    const char *v = getenv(PLAYER_MODE_ENV);
+    const char *v = player_runtime_player_mode();
     g_env_forces_offline = 0;
     if (v != NULL && strcasecmp(v, "offline") == 0) {
         g_env_forces_offline = 1;
@@ -1198,25 +1244,25 @@ int player_env_forces_offline(void)
 int player_switch_offline_mode(void)
 {
     if (g_current_online_mode == ONLINE_MODE_NO) {
-        tts_play_text("当前为离线模式，无需切换");
+        tts_play_audio_file(MODE_OFFLINE_ALREADY_WAV);
         return 0;
     }
     g_eof_autostart_suppressed = 1;
     player_stop_play();
     force_stop_playback_processes();
     if (player_ensure_sdcard_mounted() != 0) {
-        tts_play_text("请先插入存储设备");
+        tts_play_audio_file(INSERT_STORAGE_DEVICE_WAV);
         return 1;
     }
     if (music_lib_load_all_local_to_link() != 0) {
-        tts_play_text("切换离线模式失败，无法读取存储设备歌曲");
+        tts_play_audio_file(MODE_OFFLINE_SWITCH_FAILED_WAV);
         return -1;
     }
     player_sync_shm_to_first_playable_local_song();
     socket_close_connection();
     sync();
     player_commit_offline_runtime_state();
-    tts_play_text("已切换到离线模式");
+    tts_play_audio_file(MODE_OFFLINE_WAV);
     return 0;
 }
 
@@ -1231,7 +1277,7 @@ static void asr_kws_switch_online_mode(void)
 int player_switch_online_mode(void)
 {
     if (g_current_online_mode == ONLINE_MODE_YES) {
-        tts_play_text("当前为在线模式，无需切换");
+        tts_play_audio_file(MODE_ONLINE_ALREADY_WAV);
         return 0;
     }
     g_eof_autostart_suppressed = 1;

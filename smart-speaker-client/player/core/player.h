@@ -39,11 +39,13 @@ int player_search_insert_keyword_and_play(const char *keyword);
 int player_search_insert_keyword_prepare_voice_intro(const char *keyword, Music_Node *out_track);
 int player_play_query_resolve_done(const MusicSourceItem *item, const char *keyword, Music_Node *out_track);
 int player_play_query_search_done(MusicSourceResult *result, const char *keyword, Music_Node *out_track);
+int player_play_query_playlist_done(MusicSourceResult *result, const char *keyword, Music_Node *out_track);
 void player_voice_intro_commit_insert_play(void);
 int player_search_hot_random_prepare_for_tts(Music_Node *out_track);
 void player_voice_intro_commit_hot_random_play(void);
 void player_voice_intro_arm_deferred_play(int kind);
 int player_voice_intro_consume_deferred_play(void);
+int player_voice_intro_defer_pending(void);
 int player_search_and_play_hot_random(void);
 int player_simulate_song_finished(void);
 int player_prepare_keyword_playlist(const char *keyword, int auto_start);
@@ -59,6 +61,10 @@ void player_audio_focus_prepare_resume(void);
 void player_audio_focus_cancel_resume(void);
 void player_audio_focus_mark_tts_standalone(void);
 void player_suspend_for_tts(void);
+
+void player_voice_cmd_expect_followup(void);
+void player_voice_cmd_clear_followup(void);
+int player_voice_cmd_followup_pending(void);
 
 int init_asr_fifo();
 int init_kws_fifo();

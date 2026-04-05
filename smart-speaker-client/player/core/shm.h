@@ -27,6 +27,7 @@ typedef struct {
     pid_t parent_pid;           // 父进程的pid
     pid_t child_pid;            // 子进程的pid
     pid_t grand_pid;           // 孙子进程的pid
+    char current_source[MUSIC_SOURCE_MAX]; /* 仅追加在末尾，勿插入中间以免破坏旧 shm 布局 */
 } Shm_Data;
 
 
