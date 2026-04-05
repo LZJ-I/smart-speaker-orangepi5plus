@@ -46,9 +46,14 @@ void select_music_async_play_query_done(music_async_out_t out, MusicSourceItem *
         if (player_play_query_search_done(search_res, query, &track) != 0) {
             out = MUSIC_ASYNC_FAIL;
         }
+    } else if (out == MUSIC_ASYNC_OK_PLAYLIST) {
+        if (player_play_query_playlist_done(search_res, query, &track) != 0) {
+            out = MUSIC_ASYNC_FAIL;
+        }
     }
 
     if (out == MUSIC_ASYNC_FAIL) {
+        player_voice_cmd_clear_followup();
         if (music_source_take_online_search_blocked()) {
             tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);
             return;
@@ -57,6 +62,10 @@ void select_music_async_play_query_done(music_async_out_t out, MusicSourceItem *
             snprintf(offline_msg, sizeof(offline_msg),
                      "当前为离线模式，本地没有%s，请尝试切换在线模式", query != NULL ? query : "");
             tts_play_text(offline_msg);
+            return;
+        }
+        if (query != NULL && select_text_is_playlist_query(query)) {
+            tts_play_audio_file(PLAYLIST_NOT_FOUND_WAV);
             return;
         }
         tts_play_audio_file(FALLBACK_UNMATCHED_WAV);
@@ -68,20 +77,69 @@ void select_music_async_play_query_done(music_async_out_t out, MusicSourceItem *
     tts_play_text(intro);
 }
 
-int try_music_lib_play(const char *text)
+int try_music_lib_play_playlist(const char *text)
 {
     char query[256] = {0};
+    char source[16] = {0};
     char intro[512];
     char offline_msg[384];
     Music_Node track;
     music_source_clear_online_search_blocked();
-    if (!select_text_extract_music_query(text, query, sizeof(query))) {
+    if (select_text_is_incomplete_music_query(text)) {
+        player_voice_cmd_clear_followup();
+        tts_play_audio_file(ASK_WHAT_TO_LISTEN_WAV);
+        return 1;
+    }
+    if (!select_text_extract_music_query_source(text, query, sizeof(query), source, sizeof(source))) {
+        return 0;
+    }
+    if (!select_text_is_playlist_query(query)) {
+        return 0;
+    }
+    LOGI(TAG, "歌单 source=%s query=%s", source[0] != '\0' ? source : "default", query);
+    if (music_server_async_start_play_query(query, source) == 0) {
+        return 1;
+    }
+    if (player_search_insert_keyword_prepare_voice_intro(query, &track) != 0) {
+        if (music_source_take_online_search_blocked()) {
+            player_voice_cmd_clear_followup();
+            tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);
+            return 1;
+        }
+        if (g_current_online_mode == ONLINE_MODE_NO) {
+            player_voice_cmd_clear_followup();
+            snprintf(offline_msg, sizeof(offline_msg),
+                     "当前为离线模式，本地没有%s，请尝试切换在线模式", query);
+            tts_play_text(offline_msg);
+            return 1;
+        }
+        return 0;
+    }
+    format_voice_track_intro(&track, intro, sizeof(intro));
+    player_voice_intro_arm_deferred_play(PLAYER_VOICE_DEFER_INSERT_COMMIT);
+    tts_play_text(intro);
+    return 1;
+}
+
+int try_music_lib_play(const char *text)
+{
+    char query[256] = {0};
+    char source[16] = {0};
+    char intro[512];
+    char offline_msg[384];
+    Music_Node track;
+    music_source_clear_online_search_blocked();
+    if (!select_text_extract_music_query_source(text, query, sizeof(query), source, sizeof(source))) {
+        return 0;
+    }
+    if (select_text_is_playlist_query(query)) {
         return 0;
     }
     if (select_text_is_hot_generic_query(query)) {
-        LOGI(TAG, "搜歌关键词: 热门");
+        LOGI(TAG, "搜歌关键词 source=%s query=热门", source[0] != '\0' ? source : "default");
         if (player_search_hot_random_prepare_for_tts(&track) != 0) {
             if (g_current_online_mode == ONLINE_MODE_NO) {
+                player_voice_cmd_clear_followup();
                 snprintf(offline_msg, sizeof(offline_msg),
                          "当前为离线模式，本地没有合适的歌曲，请尝试切换在线模式");
                 tts_play_text(offline_msg);
@@ -94,16 +152,18 @@ int try_music_lib_play(const char *text)
         tts_play_text(intro);
         return 1;
     }
-    LOGI(TAG, "搜歌关键词: %s", query);
-    if (music_server_async_start_play_query(query) == 0) {
+    LOGI(TAG, "搜歌关键词 source=%s query=%s", source[0] != '\0' ? source : "default", query);
+    if (music_server_async_start_play_query(query, source) == 0) {
         return 1;
     }
     if (player_search_insert_keyword_prepare_voice_intro(query, &track) != 0) {
         if (music_source_take_online_search_blocked()) {
+            player_voice_cmd_clear_followup();
             tts_play_audio_file(ONLINE_MUSIC_UNSUPPORTED_WAV);
             return 1;
         }
         if (g_current_online_mode == ONLINE_MODE_NO) {
+            player_voice_cmd_clear_followup();
             snprintf(offline_msg, sizeof(offline_msg),
                      "当前为离线模式，本地没有%s，请尝试切换在线模式", query);
             tts_play_text(offline_msg);
@@ -125,6 +185,7 @@ int run_llm_and_tts(const char *raw_text)
     snprintf(question, sizeof(question), "%s", raw_text);
     select_text_trim(question);
     if (question[0] == '\0') return -1;
+    player_voice_cmd_clear_followup();
     if (query_llm(question, response, sizeof(response)) != 0 || response[0] == '\0') {
         return -1;
     }

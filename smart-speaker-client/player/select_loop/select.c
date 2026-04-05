@@ -230,6 +230,7 @@ static void select_read_asr(void)
     if (buf[ret - 1] == '\n') buf[ret - 1] = '\0';
     LOGI(TAG, "读取asr管道数据[%s]", buf);
     if (strcmp(buf, ASR_TIMEOUT_SENTINEL) == 0) {
+        player_voice_cmd_clear_followup();
         if (player_audio_focus_should_resume()) {
             player_audio_focus_prepare_resume();
             player_continue_play();
@@ -289,9 +290,18 @@ static void select_read_asr(void)
     case RULE_CMD_PLAY_START:
         player_start_play();
         break;
+    case RULE_CMD_PLAY_PLAYLIST:
+        if (try_music_lib_play_playlist(buf)) {
+        } else {
+            player_voice_cmd_clear_followup();
+            player_audio_focus_cancel_resume();
+            tts_play_audio_file(FALLBACK_WAV_PATH);
+        }
+        break;
     case RULE_CMD_PLAY_QUERY:
         if (try_music_lib_play(buf)) {
         } else {
+            player_voice_cmd_clear_followup();
             player_audio_focus_cancel_resume();
             tts_play_audio_file(FALLBACK_WAV_PATH);
         }
@@ -309,12 +319,15 @@ static void select_read_asr(void)
     case RULE_CMD_NONE:
     default:
         if (g_current_online_mode == ONLINE_MODE_NO) {
+            player_voice_cmd_clear_followup();
             player_audio_focus_cancel_resume();
             tts_play_audio_file(FALLBACK_WAV_PATH);
         } else {
-            if (try_music_lib_play(buf)) {
+            if (try_music_lib_play_playlist(buf)) {
+            } else if (try_music_lib_play(buf)) {
             } else if (run_llm_and_tts(buf) == 0) {
             } else {
+                player_voice_cmd_clear_followup();
                 player_audio_focus_cancel_resume();
                 tts_play_audio_file(FALLBACK_WAV_PATH);
             }
@@ -352,6 +365,8 @@ static void select_read_kws(void)
     buf[ret] = '\0';
     if (buf[ret - 1] == '\n') buf[ret - 1] = '\0';
     LOGI(TAG, "读取kws管道数据[%s]", buf);
+    player_voice_cmd_clear_followup();
+    player_voice_cmd_expect_followup();
 }
 
 
@@ -376,6 +391,9 @@ static void select_read_player_ctrl(void)
     if (strstr(buf, "tts:start") != NULL)
     {
         LOGI(TAG, "收到TTS开始事件");
+        if (player_voice_intro_defer_pending()) {
+            player_voice_cmd_clear_followup();
+        }
         if (player_get_audio_focus() == AUDIO_FOCUS_MUSIC_PLAYING)
         {
             player_suspend_for_tts();
@@ -399,8 +417,10 @@ static void select_read_player_ctrl(void)
         }
         if (player_audio_focus_should_resume() && g_current_state != PLAY_STATE_STOP)
         {
-            player_audio_focus_prepare_resume();
-            player_continue_play();
+            if (!player_voice_cmd_followup_pending()) {
+                player_audio_focus_prepare_resume();
+                player_continue_play();
+            }
         }
         else if (player_get_audio_focus() == AUDIO_FOCUS_TTS_PLAYING)
         {
