@@ -21,6 +21,7 @@ OBJS = \
 	net/socket_report.o \
 	device/device.o \
 	core/player.o \
+	core/runtime_config.o \
 	core/player_fifo.o \
 	core/player_gst.o \
 	rules/rule_match.o \
@@ -40,9 +41,10 @@ TARGET = run
 all: $(TARGET)
 
 TEST_CFLAGS = -Wall -g -I$(P)/.. -I$(P)/core -I$(P)/net -I$(P)/music_source $(shell pkg-config --cflags json-c 2>/dev/null)
-test_online_music_chain: test_online_music_chain.c music_source/music_source_server.c
+test_online_music_chain: test_online_music_chain.c music_source/music_source_server.c core/runtime_config.c
 	$(CC) $(TEST_CFLAGS) -o $@ \
-		test_online_music_chain.c music_source/music_source_server.c $(shell pkg-config --libs json-c 2>/dev/null || echo -ljson-c)
+		test_online_music_chain.c music_source/music_source_server.c core/runtime_config.c \
+		$(shell pkg-config --libs json-c 2>/dev/null || echo -ljson-c)
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET) $(LIBS)

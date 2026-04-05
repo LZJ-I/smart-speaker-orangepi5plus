@@ -14,6 +14,7 @@
 #include "socket.h"
 #include "device.h"
 #include "player.h"
+#include "runtime_config.h"
 #define TAG "PLAYER-MAIN"
 
 static void handle_exit_signal(int sig)
@@ -190,10 +191,10 @@ int main(int argc, char const *argv[])
         }
     }
 
-    device_set_volume(DEFAULT_VOLUME);
+    device_set_volume(player_runtime_startup_volume());
 
     if (player_env_forces_offline()) {
-        LOGI(TAG, "离线模式（环境变量），跳过 TCP 长连");
+        LOGI(TAG, "离线模式配置生效，跳过 TCP 长连");
     } else if (socket_init() != 0) {
         LOGW(TAG, "TCP 长连失败，进入离线模式（挂载 SD 并载入本地曲库）");
         tts_play_audio_file(SERVER_CONNECT_FAILED_WAV);

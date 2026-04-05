@@ -32,9 +32,16 @@
 
 #define SERVER_DISCONNECT_OFFLINE_WAV "./assets/tts/server_disconnect_offline.wav"
 #define SERVER_CONNECT_FAILED_WAV "./assets/tts/server_connect_failed.wav"
+#define ASK_WHAT_TO_LISTEN_WAV "./assets/tts/ask_what_to_listen.wav"
+#define INSERT_STORAGE_DEVICE_WAV "./assets/tts/insert_storage_device.wav"
 #define MODE_ONLINE_WAV "./assets/tts/mode_online.wav"
+#define MODE_ONLINE_ALREADY_WAV "./assets/tts/mode_online_already.wav"
+#define MODE_OFFLINE_WAV "./assets/tts/mode_offline.wav"
+#define MODE_OFFLINE_ALREADY_WAV "./assets/tts/mode_offline_already.wav"
+#define MODE_OFFLINE_SWITCH_FAILED_WAV "./assets/tts/mode_offline_switch_failed.wav"
 #define NOOP_REPLY_RECALL_WAV "./assets/tts/noop_reply_recall.wav"
 #define NOOP_REPLY_LEAVE_WAV "./assets/tts/noop_reply_leave.wav"
 #define NOOP_REPLY_OK_WAV "./assets/tts/noop_reply_ok.wav"
+#define PLAYLIST_NOT_FOUND_WAV "./assets/tts/playlist_not_found.wav"
 
 #endif
