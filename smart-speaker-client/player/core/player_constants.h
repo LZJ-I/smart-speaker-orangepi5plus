@@ -32,5 +32,6 @@
 
 #define SERVER_DISCONNECT_OFFLINE_WAV "./assets/tts/server_disconnect_offline.wav"
 #define SERVER_CONNECT_FAILED_WAV "./assets/tts/server_connect_failed.wav"
+#define MODE_ONLINE_WAV "./assets/tts/mode_online.wav"
 
 #endif

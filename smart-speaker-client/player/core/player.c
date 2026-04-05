@@ -1223,6 +1223,6 @@ int player_switch_online_mode(void)
     g_current_state = PLAY_STATE_STOP;
     g_current_suspend = PLAY_SUSPEND_YES;
     player_set_audio_focus(AUDIO_FOCUS_IDLE);
-    tts_play_text("已切换到在线模式");
+    tts_play_audio_file(MODE_ONLINE_WAV);
     return 0;
 }
