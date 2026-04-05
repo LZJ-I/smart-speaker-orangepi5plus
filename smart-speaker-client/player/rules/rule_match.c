@@ -1,5 +1,6 @@
 #include "rule_match.h"
 #include <string.h>
+#include "select_text.h"
 
 typedef int (*rule_match_fn)(const char *text);
 
@@ -223,47 +224,62 @@ static int is_generic_query(const char *q)
     return 0;
 }
 
+static int is_start_only_request(const char *text)
+{
+    char t[256];
+    size_t len;
+    if (text == NULL) {
+        return 0;
+    }
+    len = strlen(text);
+    if (len == 0 || len >= sizeof(t)) {
+        return 0;
+    }
+    memcpy(t, text, len + 1);
+    trim_ascii_blank(t);
+    strip_tail_particles(t);
+    return strcmp(t, "播放音乐") == 0 ||
+           strcmp(t, "播放") == 0 ||
+           strcmp(t, "开始播放") == 0 ||
+           strcmp(t, "开始") == 0 ||
+           strcmp(t, "放首歌") == 0 ||
+           strcmp(t, "唱首歌") == 0;
+}
+
 static int match_play_query(const char *text)
 {
-    static const char *const markers[] = {
-        "我想听", "想听一首", "我要听一首", "想听", "我要听", "来一首", "来首", "给我来一首", "给我放",
-        "播放一下", "放一下", "听一下", "播放", "放一首", "点一首", "唱一首", "点播", "听听", NULL,
-    };
-    int i = 0;
+    char q[256];
     if (has_control_words(text)) {
         return 0;
     }
-    while (markers[i] != NULL) {
-        const char *p = strstr(text, markers[i]);
-        if (p != NULL) {
-            char q[256] = {0};
-            size_t n = 0;
-            p += strlen(markers[i]);
-            while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
-                ++p;
-            }
-            n = strlen(p);
-            while (n > 0 && (p[n - 1] == ' ' || p[n - 1] == '\t' || p[n - 1] == '\n' || p[n - 1] == '\r')) {
-                --n;
-            }
-            if (n == 0 || n >= sizeof(q)) {
-                return 0;
-            }
-            memcpy(q, p, n);
-            q[n] = '\0';
-            trim_ascii_blank(q);
-            strip_tail_particles(q);
-            if (q[0] == '\0') {
-                return 0;
-            }
-            if (is_generic_query(q)) {
-                return (strcmp(markers[i], "播放") == 0) ? 0 : 1;
-            }
-            return 1;
-        }
-        ++i;
+    if (!select_text_extract_music_query_source(text, q, sizeof(q), NULL, 0)) {
+        return 0;
     }
-    return 0;
+    if (q[0] == '\0' || strstr(q, "\xe6\xad\x8c\xe5\x8d\x95") != NULL) {
+        return 0;
+    }
+    if (is_generic_query(q) && is_start_only_request(text)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int match_play_playlist(const char *text)
+{
+    char q[256];
+    if (has_control_words(text)) {
+        return 0;
+    }
+    if (!select_text_extract_music_query_source(text, q, sizeof(q), NULL, 0)) {
+        return 0;
+    }
+    if (q[0] == '\0' || strstr(q, "\xe6\xad\x8c\xe5\x8d\x95") == NULL) {
+        return 0;
+    }
+    if (is_generic_query(q) && is_start_only_request(text)) {
+        return 0;
+    }
+    return 1;
 }
 
 static const rule_def_t k_rules[] = {
@@ -279,6 +295,7 @@ static const rule_def_t k_rules[] = {
     {RULE_CMD_VOL_UP, "调高音量", match_vol_up},
     {RULE_CMD_MODE_SINGLE, "单曲循环", match_mode_single},
     {RULE_CMD_MODE_ORDER, "顺序播放", match_mode_order},
+    {RULE_CMD_PLAY_PLAYLIST, "歌单检索", match_play_playlist},
     {RULE_CMD_PLAY_QUERY, "按文本搜歌", match_play_query},
     {RULE_CMD_PLAY_START, "开始播放", match_play_start},
 };
@@ -318,6 +335,7 @@ const char *rule_cmd_to_string(rule_cmd_t cmd)
     case RULE_CMD_VOL_UP: return "RULE_CMD_VOL_UP";
     case RULE_CMD_MODE_SINGLE: return "RULE_CMD_MODE_SINGLE";
     case RULE_CMD_MODE_ORDER: return "RULE_CMD_MODE_ORDER";
+    case RULE_CMD_PLAY_PLAYLIST: return "RULE_CMD_PLAY_PLAYLIST";
     case RULE_CMD_PLAY_QUERY: return "RULE_CMD_PLAY_QUERY";
     case RULE_CMD_PLAY_START: return "RULE_CMD_PLAY_START";
     case RULE_CMD_SWITCH_OFFLINE: return "RULE_CMD_SWITCH_OFFLINE";

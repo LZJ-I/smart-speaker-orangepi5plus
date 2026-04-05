@@ -13,7 +13,8 @@ typedef enum {
     RULE_CMD_MODE_SINGLE,        // 单曲循环
     RULE_CMD_MODE_ORDER,        // 顺序播放
     RULE_CMD_PLAY_START,         // 开始播放
-    RULE_CMD_PLAY_QUERY,         // 按文本搜歌播放
+    RULE_CMD_PLAY_PLAYLIST,      // 文本含「歌单」→ 仅走歌单检索链
+    RULE_CMD_PLAY_QUERY,         // 文本点歌（单曲/解析/搜歌，不含歌单专用规则时）
     RULE_CMD_SWITCH_OFFLINE,     // 切换到离线模式
     RULE_CMD_SWITCH_ONLINE,      // 切换到在线模式
     RULE_CMD_NOOP                // 无指令闲聊（如没事），播随机告别 wav
