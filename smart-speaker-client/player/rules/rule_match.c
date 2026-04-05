@@ -161,7 +161,7 @@ static int match_switch_online(const char *text)
 
 static int match_play_start(const char *text)
 {
-    static const char *const k[] = {"开始播放", "播放音乐", "播放", "开始", "放首歌", NULL};
+    static const char *const k[] = {"开始播放", "播放音乐", "播放", "开始", "放首歌", "唱首歌", NULL};
     static const char *const must_all[] = {"首", "听听", NULL};
     static const char *const deny[] = {"结束", "停止", "暂停", NULL};
     if (has_any(text, deny)) {
@@ -195,8 +195,8 @@ static int is_generic_query(const char *q)
 static int match_play_query(const char *text)
 {
     static const char *const markers[] = {
-        "我想听", "想听", "我要听", "来一首", "来首", "给我来一首", "给我放", "播放",
-        "放一首", "点一首", "唱一首", "点播", "听听", NULL,
+        "我想听", "想听一首", "我要听一首", "想听", "我要听", "来一首", "来首", "给我来一首", "给我放",
+        "播放一下", "放一下", "听一下", "播放", "放一首", "点一首", "唱一首", "点播", "听听", NULL,
     };
     int i = 0;
     if (has_control_words(text)) {

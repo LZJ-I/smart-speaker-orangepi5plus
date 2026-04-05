@@ -81,11 +81,30 @@ int select_text_is_hot_generic_query(const char *query)
     return 0;
 }
 
+static int de_music_query_denied(const char *text)
+{
+    static const char *deny_prefix[] = {
+        "今天", "现在", "什么", "怎么", "为什么", "请问", "谁是", "哪一", "哪个", NULL,
+    };
+    int i = 0;
+    if (text == NULL || text[0] == '\0') {
+        return 0;
+    }
+    while (deny_prefix[i] != NULL) {
+        size_t n = strlen(deny_prefix[i]);
+        if (strncmp(text, deny_prefix[i], n) == 0) {
+            return 1;
+        }
+        ++i;
+    }
+    return 0;
+}
+
 int select_text_extract_music_query(const char *text, char *out, size_t out_size)
 {
     const char *markers[] = {
-        "我想听", "想听", "我要听", "给我放", "给我来一首", "来一首", "来首",
-        "放一首", "点一首", "唱一首", "点播", "播放", "听", NULL,
+        "我想听", "想听一首", "我要听一首", "想听", "我要听", "给我放", "给我来一首", "来一首", "来首",
+        "放一首", "点一首", "唱一首", "点播", "播放一下", "放一下", "听一下", "播放", "听", NULL,
     };
     const char *p = NULL;
     int i = 0;
@@ -129,7 +148,7 @@ int select_text_extract_music_query(const char *text, char *out, size_t out_size
         }
     }
 
-    if (!select_text_has_control_intent(text) && strstr(text, "的") != NULL) {
+    if (!select_text_has_control_intent(text) && strstr(text, "的") != NULL && !de_music_query_denied(text)) {
         snprintf(out, out_size, "%s", text);
         trim_text(out);
         strip_trailing_particles(out);

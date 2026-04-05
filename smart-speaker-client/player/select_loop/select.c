@@ -289,7 +289,8 @@ static void select_read_asr(void)
             player_audio_focus_cancel_resume();
             tts_play_audio_file(FALLBACK_WAV_PATH);
         } else {
-            if (run_llm_and_tts(buf) == 0) {
+            if (try_music_lib_play(buf)) {
+            } else if (run_llm_and_tts(buf) == 0) {
             } else {
                 player_audio_focus_cancel_resume();
                 tts_play_audio_file(FALLBACK_WAV_PATH);

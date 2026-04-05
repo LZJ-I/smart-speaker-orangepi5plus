@@ -402,19 +402,79 @@ done:
     return ret;
 }
 
+static int server_fetch_play_url(const char *source, const char *song_id, char *url_buf, size_t url_size)
+{
+    int fd;
+    int ret = -1;
+    char *payload = NULL;
+    json_object *request = NULL;
+    json_object *root = NULL;
+    json_object *value = NULL;
+    const char *pu;
+
+    if (source == NULL || song_id == NULL || source[0] == '\0' || song_id[0] == '\0' || url_buf == NULL || url_size == 0) {
+        return -1;
+    }
+    url_buf[0] = '\0';
+    fd = server_connect_once();
+    if (fd < 0) {
+        return -1;
+    }
+    request = json_object_new_object();
+    json_object_object_add(request, "cmd", json_object_new_string("get_play_url"));
+    json_object_object_add(request, "source", json_object_new_string(source));
+    json_object_object_add(request, "song_id", json_object_new_string(song_id));
+    if (server_send_request(fd, request) != 0) {
+        goto done;
+    }
+    if (server_recv_response(fd, &payload) != 0) {
+        goto done;
+    }
+    root = json_tokener_parse(payload);
+    if (root == NULL) {
+        goto done;
+    }
+    if (!json_object_object_get_ex(root, "result", &value) || strcmp(json_object_get_string(value), "ok") != 0) {
+        goto done;
+    }
+    if (!json_object_object_get_ex(root, "play_url", &value)) {
+        goto done;
+    }
+    pu = json_object_get_string(value);
+    if (pu == NULL || pu[0] == '\0') {
+        goto done;
+    }
+    if (snprintf(url_buf, url_size, "%s", pu) >= (int)url_size) {
+        goto done;
+    }
+    ret = 0;
+
+done:
+    if (request != NULL) {
+        json_object_put(request);
+    }
+    if (root != NULL) {
+        json_object_put(root);
+    }
+    free(payload);
+    close(fd);
+    return ret;
+}
+
 static int music_source_server_get_url(const char *source, const char *song_id, char *url_buf, size_t url_size)
 {
     char encoded[MUSIC_ID_MAX * 3];
     if (source == NULL || song_id == NULL || url_buf == NULL || url_size == 0)
         return -1;
-    if (strcmp(source, "server") != 0)
-        return -1;
-    if (encode_path_segments(song_id, encoded, sizeof(encoded)) != 0)
-        return -1;
-    if (snprintf(url_buf, url_size, "%s%s", music_server_base_url(), encoded) >= (int)url_size) {
-        return -1;
+    if (strcmp(source, "server") == 0) {
+        if (encode_path_segments(song_id, encoded, sizeof(encoded)) != 0)
+            return -1;
+        if (snprintf(url_buf, url_size, "%s%s", music_server_base_url(), encoded) >= (int)url_size) {
+            return -1;
+        }
+        return 0;
     }
-    return 0;
+    return server_fetch_play_url(source, song_id, url_buf, url_size);
 }
 
 static void music_source_server_free_result(MusicSourceResult *result)

@@ -41,9 +41,15 @@ int music_source_search(const char *keyword, int page, int page_size, MusicSourc
 int music_source_get_url(const char *source, const char *song_id, char *url_buf, size_t url_size)
 {
     const MusicSourceBackend *backend;
+    const MusicSourceBackend *srv;
     if (song_id == NULL || url_buf == NULL || url_size == 0) return -1;
     backend = select_backend_by_source(source);
-    if (backend->get_url(source != NULL ? source : "local", song_id, url_buf, url_size) == 0) {
+    if (backend->get_url(source != NULL ? source : "local", song_id, url_buf, url_size) == 0 && url_buf[0] != '\0') {
+        return 0;
+    }
+    srv = music_source_server_backend();
+    if (g_current_online_mode == ONLINE_MODE_YES && source != NULL && strcmp(source, "local") != 0 &&
+        strcmp(source, "server") != 0 && srv->get_url(source, song_id, url_buf, url_size) == 0 && url_buf[0] != '\0') {
         return 0;
     }
     if (backend != music_source_local_backend()) {
