@@ -646,6 +646,7 @@ bool Server::server_get_play_url(struct bufferevent *bev, const Json::Value &roo
     if (url != NULL && url[0] != '\0') {
         reply["result"] = "ok";
         reply["play_url"] = std::string(url);
+        Server::debug("[get_play_url] source=%s song_id=%s play_url=%s", src.c_str(), sid.c_str(), url);
         music_free_string(url);
     } else {
         reply["result"] = "fail";
@@ -692,6 +693,8 @@ bool Server::server_resolve_music(struct bufferevent *bev, const Json::Value &ro
     reply["song_id"] = std::string(r.song_id);
     reply["singer"] = std::string(r.singer);
     reply["song"] = std::string(r.song);
+    Server::debug("[resolve_music] keyword=%s singer=%s song=%s play_url=%s", kw.c_str(), r.singer, r.song,
+                  r.play_url);
     music_free_resolve_result(&r);
     return server_send_data(bev, reply);
 }
@@ -737,6 +740,17 @@ bool Server::server_list_music(struct bufferevent *bev, const Json::Value &root)
                 music.size() > 0) {
                 total = remote_total;
                 total_pages = remote_tp;
+                for (Json::ArrayIndex i = 0; i < music.size(); ++i) {
+                    const Json::Value &it = music[i];
+                    if (it.isMember("play_url") && it["play_url"].isString()) {
+                        const std::string &pu = it["play_url"].asString();
+                        if (!pu.empty()) {
+                            Server::debug("[list_music] keyword=%s singer=%s song=%s play_url=%s",
+                                          keyword.c_str(), it["singer"].asCString(),
+                                          it["song"].asCString(), pu.c_str());
+                        }
+                    }
+                }
             } else {
                 fill_list_music_from_local_keyword(keyword, music, page, page_size, total, total_pages);
             }
@@ -850,7 +864,7 @@ void Server::debug(const char *s, ...)
 {
     va_list args;
     va_start(args, s);
-    char buf[1024] = {0};
+    char buf[8192] = {0};
     vsnprintf(buf, sizeof(buf), s, args);
     va_end(args);
 
