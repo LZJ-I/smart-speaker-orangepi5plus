@@ -36,7 +36,7 @@ sudo apt install -y \
 - **环境变量**：
   - **`SMART_SPEAKER_MUSIC_API_KEY`（必填，否则关闭在线取链与精准在线搜歌）**：第三方音源接口 Key（与洛雪等脚本中 `X-API-Key` 一致）。未设置时，`list_music` 对**非泛化关键词**返回空列表且 `online_search_enabled=false`；`get_play_url` 返回 `result=disabled`；嵌入式端将播报「在线搜歌功能尚未配置」提示音（需用 `tools/gen_mode_tts_wav.sh` 生成 `assets/tts/online_music_unsupported.wav`）。
   - `SMART_SPEAKER_MUSIC_API_URL`：音源 API 根路径，默认 `https://source.shiqianjiang.cn/api/music`。
-  - `SMART_SPEAKER_MUSIC_PLATFORM`：搜索平台，`auto`（默认，**优先网易云再 QQ**）/`tx`/`wy`。QQ 公开搜索接口常 **HTTP 500**，不建议单独 `tx`。
+  - `SMART_SPEAKER_MUSIC_PLATFORM`：搜索平台，`auto`（默认，**优先 QQ 再网易云**）/`tx`/`wy`。QQ 公开搜索接口可能出现 **HTTP 500** 或空结果，此时 `auto` 会回退网易云；若只要 QQ 结果可设 `tx`。
   - `SMART_SPEAKER_MUSIC_QUALITY`：取链音质，默认 `128k`
 
 **运行 `server_smart_speaker` 时**需能加载同目录相对路径下的 `music-lib/target/release/libmusic_downloader.so`（Makefile 已设置 `rpath`）；若移动可执行文件，请同步拷贝 `.so` 或设置 `LD_LIBRARY_PATH`。
