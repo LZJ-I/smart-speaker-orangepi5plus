@@ -31,7 +31,7 @@ const SherpaOnnxOfflineRecognizer *g_offline_recognizer = NULL;
 const SherpaOnnxCircularBuffer *g_audio_buffer = NULL;
 
 #define VAD_WINDOW_SIZE 512
-#define BUFFER_CAPACITY 480000
+#define BUFFER_CAPACITY 960000
 
 static float *g_current_audio = NULL;
 static int32_t g_current_audio_size = 0;
@@ -147,6 +147,7 @@ int process_asr_result(float *model_audio, int model_frames)
 
         if (!g_speech_started && SherpaOnnxVoiceActivityDetectorDetected(g_vad)) {
             g_speech_started = 1;
+            g_current_asr_text_buffer[0] = '\0';
             clock_gettime(CLOCK_MONOTONIC, &g_last_recognize_time);
             LOGD(TAG, "检测到语音开始");
         }
@@ -196,9 +197,26 @@ int process_asr_result(float *model_audio, int model_frames)
                 const SherpaOnnxOfflineRecognizerResult *result = SherpaOnnxGetOfflineStreamResult(stream);
                 if (result && strlen(result->text) > 0)
                 {
-                    LOGI(TAG, "识别结果: %s", result->text);
-                    strncpy(g_last_asr_text, result->text, 1023);
+                    const char *final_txt = result->text;
+                    if (g_current_asr_text_buffer[0] != '\0') {
+                        final_txt = g_current_asr_text_buffer;
+                        if (strcmp(final_txt, result->text) != 0) {
+                            LOGD(TAG, "段解码与流式不一致，采用流式: [%s] vs [%s]",
+                                 final_txt, result->text);
+                        }
+                    }
+                    LOGI(TAG, "识别结果: %s", final_txt);
+                    strncpy(g_last_asr_text, final_txt, 1023);
                     g_last_asr_text[1023] = '\0';
+                    g_current_asr_text_buffer[0] = '\0';
+                    ret = 0;
+                }
+                else if (g_current_asr_text_buffer[0] != '\0')
+                {
+                    LOGI(TAG, "识别结果: %s", g_current_asr_text_buffer);
+                    strncpy(g_last_asr_text, g_current_asr_text_buffer, 1023);
+                    g_last_asr_text[1023] = '\0';
+                    g_current_asr_text_buffer[0] = '\0';
                     ret = 0;
                 }
 
