@@ -134,43 +134,45 @@ static int utf8_is_de_zh(const char *p)
     return (unsigned char)p[0] == 0xe7 && (unsigned char)p[1] == 0x9a && (unsigned char)p[2] == 0x84;
 }
 
-static int local_dual_match_parts(const char *aaa, const char *bbb, const MusicSourceItem *item)
+/* 关键词「歌手+的+歌曲」：左段为歌手，右段为歌曲；文件名也可能是「歌 - 歌手」故做交叉判断 */
+static int local_dual_match_singer_song(const char *singer_kw, const char *song_kw, const MusicSourceItem *item)
 {
-    if (aaa == NULL || bbb == NULL || item == NULL) return 0;
-    if (aaa[0] == '\0' || bbb[0] == '\0') return 0;
-    return (strstr(item->singer, aaa) != NULL && strstr(item->song_name, bbb) != NULL) ||
-           (strstr(item->singer, bbb) != NULL && strstr(item->song_name, aaa) != NULL);
+    if (singer_kw == NULL || song_kw == NULL || item == NULL) return 0;
+    if (singer_kw[0] == '\0' || song_kw[0] == '\0') return 0;
+    return (strstr(item->singer, singer_kw) != NULL && strstr(item->song_name, song_kw) != NULL) ||
+           (strstr(item->singer, song_kw) != NULL && strstr(item->song_name, singer_kw) != NULL);
 }
 
-static int local_bbb_only_match(const char *bbb, const MusicSourceItem *item)
+static int local_match_song_kw_only(const char *song_kw, const MusicSourceItem *item)
 {
-    if (bbb == NULL || bbb[0] == '\0' || item == NULL) return 0;
-    return strstr(item->song_name, bbb) != NULL || strstr(item->song_id, bbb) != NULL;
+    if (song_kw == NULL || song_kw[0] == '\0' || item == NULL) return 0;
+    return strstr(item->song_name, song_kw) != NULL || strstr(item->song_id, song_kw) != NULL;
 }
 
-static int local_try_split_singer_song_keyword(const char *keyword, char *aaa, size_t aaa_sz, char *bbb, size_t bbb_sz)
+static int local_try_split_singer_song_keyword(const char *keyword, char *singer_kw, size_t singer_kw_sz,
+                                               char *song_kw, size_t song_kw_sz)
 {
     const char *sep;
-    size_t left_len;
-    if (keyword == NULL || aaa == NULL || bbb == NULL || aaa_sz == 0 || bbb_sz == 0) {
+    size_t singer_len;
+    if (keyword == NULL || singer_kw == NULL || song_kw == NULL || singer_kw_sz == 0 || song_kw_sz == 0) {
         return 0;
     }
-    aaa[0] = '\0';
-    bbb[0] = '\0';
+    singer_kw[0] = '\0';
+    song_kw[0] = '\0';
     for (sep = strstr(keyword, "的"); sep != NULL; sep = strstr(sep + 3, "的")) {
         if (sep == keyword || !utf8_is_de_zh(sep) || sep[3] == '\0') {
             continue;
         }
-        left_len = (size_t)(sep - keyword);
-        if (left_len == 0 || left_len >= aaa_sz) {
+        singer_len = (size_t)(sep - keyword);
+        if (singer_len == 0 || singer_len >= singer_kw_sz) {
             continue;
         }
-        memcpy(aaa, keyword, left_len);
-        aaa[left_len] = '\0';
-        local_copy_text(bbb, bbb_sz, sep + 3);
-        local_trim_spaces(aaa);
-        local_trim_spaces(bbb);
-        if (strlen(aaa) >= 2 && strlen(bbb) >= 2) {
+        memcpy(singer_kw, keyword, singer_len);
+        singer_kw[singer_len] = '\0';
+        local_copy_text(song_kw, song_kw_sz, sep + 3);
+        local_trim_spaces(singer_kw);
+        local_trim_spaces(song_kw);
+        if (strlen(singer_kw) >= 2 && strlen(song_kw) >= 2) {
             return 1;
         }
         continue;
@@ -188,18 +190,17 @@ static int local_match_keyword(const char *keyword, const MusicSourceItem *item)
     if (strstr(item->song_id, keyword) != NULL) return 1;
     for (sep = strstr(keyword, "的"); sep != NULL; sep = strstr(sep + 3, "的")) {
         if (sep != keyword && utf8_is_de_zh(sep) && sep[3] != '\0') {
-            char left[256];
-            char right[256];
-            size_t left_len = (size_t)(sep - keyword);
-            if (left_len < sizeof(left)) {
-                memcpy(left, keyword, left_len);
-                left[left_len] = '\0';
-                local_copy_text(right, sizeof(right), sep + 3);
-                local_trim_spaces(left);
-                local_trim_spaces(right);
-                if (strlen(left) >= 2 && strlen(right) >= 2) {
-                    if ((strstr(item->singer, left) != NULL && strstr(item->song_name, right) != NULL) ||
-                        (strstr(item->singer, right) != NULL && strstr(item->song_name, left) != NULL)) {
+            char singer_part[256];
+            char song_part[256];
+            size_t singer_len = (size_t)(sep - keyword);
+            if (singer_len < sizeof(singer_part)) {
+                memcpy(singer_part, keyword, singer_len);
+                singer_part[singer_len] = '\0';
+                local_copy_text(song_part, sizeof(song_part), sep + 3);
+                local_trim_spaces(singer_part);
+                local_trim_spaces(song_part);
+                if (strlen(singer_part) >= 2 && strlen(song_part) >= 2) {
+                    if (local_dual_match_singer_song(singer_part, song_part, item)) {
                         return 1;
                     }
                 }
@@ -287,8 +288,9 @@ static int local_scan_dir(const char *root_path, const char *relative_path, cons
     return 0;
 }
 
-static int local_scan_dir_tiered(const char *root_path, const char *relative_path, const char *aaa, const char *bbb,
-                                 LocalCollectContext *dual_ctx, LocalCollectContext *bbb_ctx)
+static int local_scan_dir_tiered(const char *root_path, const char *relative_path, const char *singer_kw,
+                                 const char *song_kw, LocalCollectContext *dual_match_ctx,
+                                 LocalCollectContext *song_only_ctx)
 {
     DIR *dir;
     struct dirent *entry;
@@ -318,7 +320,8 @@ static int local_scan_dir_tiered(const char *root_path, const char *relative_pat
             continue;
         }
         if (S_ISDIR(st.st_mode)) {
-            if (local_scan_dir_tiered(child_abs, child_rel, aaa, bbb, dual_ctx, bbb_ctx) != 0 && errno != ENOENT) {
+            if (local_scan_dir_tiered(child_abs, child_rel, singer_kw, song_kw, dual_match_ctx, song_only_ctx) != 0 &&
+                errno != ENOENT) {
                 closedir(dir);
                 return -1;
             }
@@ -334,22 +337,22 @@ static int local_scan_dir_tiered(const char *root_path, const char *relative_pat
         local_parse_song_meta(entry->d_name, item.singer,
                               item.song_name, sizeof(item.song_name),
                               item.singer, sizeof(item.singer));
-        if (local_dual_match_parts(aaa, bbb, &item)) {
-            if (local_push_item(dual_ctx, &item) != 0) {
+        if (local_dual_match_singer_song(singer_kw, song_kw, &item)) {
+            if (local_push_item(dual_match_ctx, &item) != 0) {
                 closedir(dir);
-                free(dual_ctx->items);
-                dual_ctx->items = NULL;
-                dual_ctx->count = 0;
-                dual_ctx->capacity = 0;
+                free(dual_match_ctx->items);
+                dual_match_ctx->items = NULL;
+                dual_match_ctx->count = 0;
+                dual_match_ctx->capacity = 0;
                 return -1;
             }
-        } else if (local_bbb_only_match(bbb, &item)) {
-            if (local_push_item(bbb_ctx, &item) != 0) {
+        } else if (local_match_song_kw_only(song_kw, &item)) {
+            if (local_push_item(song_only_ctx, &item) != 0) {
                 closedir(dir);
-                free(bbb_ctx->items);
-                bbb_ctx->items = NULL;
-                bbb_ctx->count = 0;
-                bbb_ctx->capacity = 0;
+                free(song_only_ctx->items);
+                song_only_ctx->items = NULL;
+                song_only_ctx->count = 0;
+                song_only_ctx->capacity = 0;
                 return -1;
             }
         }
@@ -396,30 +399,31 @@ static int local_fill_page(const LocalCollectContext *ctx, int page, int page_si
 static int music_source_local_search(const char *keyword, int page, int page_size, MusicSourceResult *result)
 {
     LocalCollectContext ctx;
-    LocalCollectContext dual_ctx;
-    LocalCollectContext bbb_ctx;
-    char aaa[256];
-    char bbb[256];
+    LocalCollectContext dual_match_ctx;
+    LocalCollectContext song_only_ctx;
+    char singer_kw[256];
+    char song_kw[256];
     const char *root = local_music_root();
     int ret;
     memset(&ctx, 0, sizeof(ctx));
-    memset(&dual_ctx, 0, sizeof(dual_ctx));
-    memset(&bbb_ctx, 0, sizeof(bbb_ctx));
+    memset(&dual_match_ctx, 0, sizeof(dual_match_ctx));
+    memset(&song_only_ctx, 0, sizeof(song_only_ctx));
     if (page <= 0 || page_size <= 0 || result == NULL) return -1;
     local_result_reset(result);
-    if (keyword != NULL && local_try_split_singer_song_keyword(keyword, aaa, sizeof(aaa), bbb, sizeof(bbb))) {
-        ret = local_scan_dir_tiered(root, "", aaa, bbb, &dual_ctx, &bbb_ctx);
+    if (keyword != NULL &&
+        local_try_split_singer_song_keyword(keyword, singer_kw, sizeof(singer_kw), song_kw, sizeof(song_kw))) {
+        ret = local_scan_dir_tiered(root, "", singer_kw, song_kw, &dual_match_ctx, &song_only_ctx);
         if (ret != 0 && errno != ENOENT) {
-            free(dual_ctx.items);
-            free(bbb_ctx.items);
+            free(dual_match_ctx.items);
+            free(song_only_ctx.items);
             return -1;
         }
-        if (dual_ctx.count > 0) {
-            free(bbb_ctx.items);
-            ctx = dual_ctx;
+        if (dual_match_ctx.count > 0) {
+            free(song_only_ctx.items);
+            ctx = dual_match_ctx;
         } else {
-            free(dual_ctx.items);
-            ctx = bbb_ctx;
+            free(dual_match_ctx.items);
+            ctx = song_only_ctx;
         }
     } else {
         ret = local_scan_dir(root, "", keyword, &ctx);
