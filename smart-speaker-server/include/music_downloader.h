@@ -37,6 +37,8 @@ typedef struct {
 
 char *music_get_url(const char *source, const char *song_id, const char *quality);
 
+void music_configure_online(const char *api_url, const char *api_key, const char *user_agent);
+
 int music_api_configured(void);
 
 typedef struct {

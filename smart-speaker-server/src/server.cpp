@@ -1,7 +1,9 @@
 #include "server.h"
 #include "app_log.h"
+#include "music_service_client.h"
 #include "music_downloader.h"
 #include "music_remote_list.h"
+#include "runtime_config.h"
 
 #include <algorithm>
 #include <arpa/inet.h>
@@ -13,6 +15,7 @@
 #include <cstring>
 #include <ctime>
 #include <dirent.h>
+#include <event2/buffer.h>
 #include <event2/listener.h>
 #include <iostream>
 #include <netinet/in.h>
@@ -33,14 +36,7 @@ struct MusicFileInfo {
 
 std::string music_root_path(void)
 {
-    const char *e = getenv("SMART_SPEAKER_MUSIC_PATH");
-    if (e != NULL && e[0] != '\0') {
-        std::string p(e);
-        if (!p.empty() && p.back() != '/')
-            p += '/';
-        return p;
-    }
-    return std::string(MUSIC_PATH);
+    return server_runtime_config().music_root;
 }
 
 bool json_has_string(const Json::Value &obj, const char *key)
@@ -281,6 +277,64 @@ static void trim_keyword(std::string &kw)
     }
 }
 
+std::string log_text_preview(const std::string &text, size_t max_len)
+{
+    if (text.size() <= max_len) {
+        return text;
+    }
+    return text.substr(0, max_len) + "...";
+}
+
+void debug_music_items_preview(const char *label, const std::string &keyword, const Json::Value &items,
+                               const Json::Value &result)
+{
+    Json::ArrayIndex i;
+    std::string preview;
+    const Json::ArrayIndex max_preview = 3;
+    if (!items.isArray()) {
+        Server::debug("[%s] keyword=%s result=%s items.size=0",
+                      label, keyword.c_str(), result.asCString());
+        return;
+    }
+    for (i = 0; i < items.size() && i < max_preview; ++i) {
+        const Json::Value &item = items[i];
+        std::string source = json_string_or_empty(item, "source");
+        std::string id = json_string_or_empty(item, "id");
+        std::string title = json_string_or_empty(item, "title");
+        std::string subtitle = json_string_or_empty(item, "subtitle");
+        if (!preview.empty()) {
+            preview += " | ";
+        }
+        preview += source + "/" + id + "/" + log_text_preview(title, 32) + "/" + log_text_preview(subtitle, 32);
+    }
+    Server::debug("[%s] keyword=%s result=%s items.size=%u preview=%s",
+                  label, keyword.c_str(), result.asCString(),
+                  static_cast<unsigned>(items.size()), preview.c_str());
+}
+
+void debug_music_resolve_preview(const char *label, const Json::Value &request, const Json::Value &reply)
+{
+    std::string source = json_string_or_empty(reply, "source");
+    if (source.empty()) {
+        source = json_string_or_empty(request, "source");
+    }
+    std::string id = json_string_or_empty(reply, "id");
+    if (id.empty()) {
+        id = json_string_or_empty(request, "id");
+    }
+    if (id.empty()) {
+        id = json_string_or_empty(request, "song_id");
+    }
+    Server::debug("[%s] source=%s id=%s result=%s title=%s subtitle=%s play_url=%s",
+                  label,
+                  source.c_str(),
+                  id.c_str(),
+                  json_string_or_empty(reply, "result").c_str(),
+                  log_text_preview(json_string_or_empty(reply, "title"), 32).c_str(),
+                  log_text_preview(json_string_or_empty(reply, "subtitle"), 32).c_str(),
+                  json_string_or_empty(reply, "play_url").c_str());
+}
+
 static void fill_list_music_from_local_cache(Json::Value &music, int page, int page_size, int &total,
                                              int &total_pages)
 {
@@ -325,6 +379,273 @@ static void fill_list_music_from_local_keyword(const std::string &keyword, Json:
             music.append(item);
         }
     }
+}
+
+std::string reply_cmd_for(const std::string &cmd)
+{
+    return cmd + ".reply";
+}
+
+void fill_music_service_reply_cmd(Json::Value &reply, const std::string &cmd)
+{
+    reply["cmd"] = reply_cmd_for(cmd);
+}
+
+bool normalize_music_service_items(Json::Value &items, const char *fallback_kind)
+{
+    if (!items.isArray()) {
+        return false;
+    }
+    for (Json::ArrayIndex i = 0; i < items.size(); ++i) {
+        Json::Value &item = items[i];
+        if (!item.isObject()) {
+            return false;
+        }
+        if (!item.isMember("kind") || !item["kind"].isString()) {
+            item["kind"] = fallback_kind;
+        }
+        if (!item.isMember("source")) {
+            item["source"] = "";
+        }
+        if (!item.isMember("id")) {
+            item["id"] = "";
+        }
+        if (!item.isMember("title")) {
+            item["title"] = "";
+        }
+        if (!item.isMember("subtitle")) {
+            item["subtitle"] = "";
+        }
+        if (!item.isMember("cover")) {
+            item["cover"] = "";
+        }
+    }
+    return true;
+}
+
+bool reply_music_search_song(Server *server, struct bufferevent *bev, const Json::Value &root,
+                             const std::string &cmd)
+{
+    Json::Value reply(Json::objectValue);
+    Json::Value items(Json::arrayValue);
+    music_search_result_t res;
+    std::string keyword = json_string_or_empty(root, "keyword");
+    std::string platform = json_string_or_empty(root, "source");
+    int page = json_has_int(root, "page") ? json_int_or_default(root, "page", 1) : 1;
+    int page_size = json_has_int(root, "page_size") ? json_int_or_default(root, "page_size", DEFAULT_PAGE_SIZE)
+                                                    : DEFAULT_PAGE_SIZE;
+    const ServerRuntimeConfig &cfg = server_runtime_config();
+    fill_music_service_reply_cmd(reply, cmd);
+
+    if (page <= 0) {
+        page = 1;
+    }
+    if (page_size <= 0) {
+        page_size = DEFAULT_PAGE_SIZE;
+    }
+
+    trim_keyword(keyword);
+    trim_keyword(platform);
+    if (platform.empty()) {
+        platform = cfg.legacy_platform;
+    }
+    music_remote_apply_source_hints(keyword, platform, platform);
+    if (keyword.empty() || music_remote_keyword_is_vague(keyword)) {
+        reply["result"] = "fail";
+        reply["kind"] = "song";
+        reply["items"] = items;
+        reply["page"] = page;
+        reply["total"] = 0;
+        reply["total_pages"] = 0;
+        reply["online_search_enabled"] = music_api_configured();
+        return server->server_send_data(bev, reply);
+    }
+    if (!music_api_configured()) {
+        reply["result"] = "fail";
+        reply["kind"] = "song";
+        reply["items"] = items;
+        reply["page"] = page;
+        reply["total"] = 0;
+        reply["total_pages"] = 0;
+        reply["online_search_enabled"] = false;
+        return server->server_send_data(bev, reply);
+    }
+
+    memset(&res, 0, sizeof(res));
+    if (music_search_page(keyword.c_str(), platform.c_str(), (uint32_t)page, (uint32_t)page_size, &res) != Ok) {
+        reply["result"] = "fail";
+        reply["kind"] = "song";
+        reply["items"] = items;
+        reply["page"] = page;
+        reply["total"] = 0;
+        reply["total_pages"] = 0;
+        reply["online_search_enabled"] = true;
+        Server::debug("[music.search.song] source=%s keyword=%s result=fail", platform.c_str(), keyword.c_str());
+        return server->server_send_data(bev, reply);
+    }
+
+    for (size_t i = 0; i < res.count; ++i) {
+        const music_info_t *info = &res.results[i];
+        Json::Value item(Json::objectValue);
+        item["kind"] = "song";
+        item["source"] = std::string(info->source);
+        item["id"] = std::string(info->id);
+        item["title"] = std::string(info->name);
+        item["subtitle"] = std::string(info->artist);
+        item["cover"] = "";
+        items.append(item);
+    }
+
+    reply["result"] = items.size() > 0 ? "ok" : "empty";
+    reply["kind"] = "song";
+    reply["items"] = items;
+    reply["page"] = static_cast<int>(res.page);
+    reply["total"] = static_cast<int>(res.total);
+    reply["total_pages"] = static_cast<int>(res.total_pages);
+    reply["online_search_enabled"] = true;
+    debug_music_items_preview(cmd.c_str(), keyword, items, reply["result"]);
+    Server::debug("[music.search.song] source=%s keyword=%s total=%u page=%u page_size=%u",
+                  platform.c_str(), keyword.c_str(), res.total, res.page, res.page_size);
+    music_free_search_result(&res);
+    return server->server_send_data(bev, reply);
+}
+
+bool proxy_music_service_list(Server *server, struct bufferevent *bev, const Json::Value &root,
+                              const std::string &cmd, const char *path, const char *kind)
+{
+    Json::Value request(Json::objectValue);
+    Json::Value response(Json::objectValue);
+    Json::Value reply(Json::objectValue);
+    std::string error_message;
+
+    request["keyword"] = json_string_or_empty(root, "keyword");
+    request["source"] = json_string_or_empty(root, "source");
+    request["page"] = json_has_int(root, "page") ? json_int_or_default(root, "page", 1) : 1;
+    request["page_size"] = json_has_int(root, "page_size") ? json_int_or_default(root, "page_size", DEFAULT_PAGE_SIZE)
+                                                           : DEFAULT_PAGE_SIZE;
+    if (request["page"].asInt() <= 0) {
+        request["page"] = 1;
+    }
+    if (request["page_size"].asInt() <= 0) {
+        request["page_size"] = DEFAULT_PAGE_SIZE;
+    }
+
+    fill_music_service_reply_cmd(reply, cmd);
+    if (!music_service_post_json(path, request, &response, &error_message)) {
+        reply["result"] = "fail";
+        reply["message"] = error_message;
+        return server->server_send_data(bev, reply);
+    }
+
+    reply["result"] = json_string_or_empty(response, "result");
+    if (reply["result"].asString().empty()) {
+        reply["result"] = "fail";
+    }
+    reply["kind"] = json_string_or_empty(response, "kind");
+    if (reply["kind"].asString().empty()) {
+        reply["kind"] = kind;
+    }
+    reply["items"] = response.isMember("items") ? response["items"] : Json::Value(Json::arrayValue);
+    if (!normalize_music_service_items(reply["items"], kind)) {
+        reply["result"] = "fail";
+        reply["items"] = Json::Value(Json::arrayValue);
+    }
+    reply["page"] = json_int_or_default(response, "page", request["page"].asInt());
+    reply["total"] = json_int_or_default(response, "total", 0);
+    reply["total_pages"] = json_int_or_default(response, "total_pages", 0);
+    debug_music_items_preview(cmd.c_str(), json_string_or_empty(root, "keyword"), reply["items"], reply["result"]);
+    return server->server_send_data(bev, reply);
+}
+
+bool proxy_music_service_detail(Server *server, struct bufferevent *bev, const Json::Value &root,
+                                const std::string &cmd, const char *path, const char *kind)
+{
+    Json::Value request(Json::objectValue);
+    Json::Value response(Json::objectValue);
+    Json::Value reply(Json::objectValue);
+    std::string error_message;
+
+    request["id"] = json_string_or_empty(root, "id");
+    request["source"] = json_string_or_empty(root, "source");
+    fill_music_service_reply_cmd(reply, cmd);
+    if (request["id"].asString().empty()) {
+        reply["result"] = "fail";
+        return server->server_send_data(bev, reply);
+    }
+    if (!music_service_post_json(path, request, &response, &error_message)) {
+        reply["result"] = "fail";
+        reply["message"] = error_message;
+        return server->server_send_data(bev, reply);
+    }
+    reply["result"] = json_string_or_empty(response, "result");
+    if (reply["result"].asString().empty()) {
+        reply["result"] = "fail";
+    }
+    reply["kind"] = kind;
+    reply["items"] = response.isMember("items") ? response["items"] : Json::Value(Json::arrayValue);
+    if (!normalize_music_service_items(reply["items"], kind)) {
+        reply["result"] = "fail";
+        reply["items"] = Json::Value(Json::arrayValue);
+    }
+    reply["page"] = json_int_or_default(response, "page", 1);
+    reply["total"] = json_int_or_default(response, "total", 0);
+    reply["total_pages"] = json_int_or_default(response, "total_pages", 0);
+    debug_music_items_preview(cmd.c_str(), json_string_or_empty(root, "id"), reply["items"], reply["result"]);
+    return server->server_send_data(bev, reply);
+}
+
+bool proxy_music_service_resolve(Server *server, struct bufferevent *bev, const Json::Value &root,
+                                 const std::string &cmd)
+{
+    Json::Value request(Json::objectValue);
+    Json::Value response(Json::objectValue);
+    Json::Value reply(Json::objectValue);
+    std::string error_message;
+
+    request["source"] = json_string_or_empty(root, "source");
+    request["id"] = json_string_or_empty(root, "id");
+    if (request["id"].asString().empty()) {
+        request["id"] = json_string_or_empty(root, "song_id");
+    }
+
+    fill_music_service_reply_cmd(reply, cmd);
+    if (request["id"].asString().empty()) {
+        reply["result"] = "fail";
+        return server->server_send_data(bev, reply);
+    }
+    if (!music_service_post_json("/music/url/resolve", request, &response, &error_message)) {
+        reply["result"] = "fail";
+        reply["message"] = error_message;
+        return server->server_send_data(bev, reply);
+    }
+
+    reply["result"] = json_string_or_empty(response, "result");
+    if (reply["result"].asString().empty()) {
+        reply["result"] = "fail";
+    }
+    reply["kind"] = json_string_or_empty(response, "kind");
+    if (reply["kind"].asString().empty()) {
+        reply["kind"] = "song";
+    }
+    reply["source"] = json_string_or_empty(response, "source");
+    reply["id"] = json_string_or_empty(response, "id");
+    reply["title"] = json_string_or_empty(response, "title");
+    reply["subtitle"] = json_string_or_empty(response, "subtitle");
+    reply["cover"] = json_string_or_empty(response, "cover");
+    reply["play_url"] = json_string_or_empty(response, "play_url");
+    debug_music_resolve_preview(cmd.c_str(), request, reply);
+    return server->server_send_data(bev, reply);
+}
+
+bool reply_music_transport_report(Server *server, struct bufferevent *bev, const Json::Value &root,
+                                  const std::string &cmd)
+{
+    Json::Value reply(Json::objectValue);
+    fill_music_service_reply_cmd(reply, cmd);
+    reply["result"] = "ok";
+    reply["state"] = json_string_or_empty(root, "state");
+    reply["current_id"] = json_string_or_empty(root, "current_id");
+    return server->server_send_data(bev, reply);
 }
 
 }  // namespace
@@ -430,18 +751,22 @@ void Server::listener_cb(struct evconnlistener *l, evutil_socket_t fd, struct so
 void Server::read_cb(struct bufferevent *bev, void *ctx)
 {
     Server *s = (Server *)ctx;
-    Json::Value root;
-    std::string cmd;
-    if (s->server_read_data(bev, &root) == false) {
-        Server::debug("数据读取或解析失败，跳过该消息");
-        return;
-    }
-    if (!json_has_string(root, "cmd")) {
-        Server::debug("JSON格式错误：缺少cmd字段或cmd类型非法");
-        return;
-    }
+    for (;;) {
+        Json::Value root;
+        std::string cmd;
+        int rr = s->server_try_read_one_json(bev, &root);
+        if (rr == 0) {
+            return;
+        }
+        if (rr < 0) {
+            continue;
+        }
+        if (!json_has_string(root, "cmd")) {
+            Server::debug("JSON格式错误：缺少cmd字段或cmd类型非法");
+            continue;
+        }
 
-    cmd = json_string_or_empty(root, "cmd");
+        cmd = json_string_or_empty(root, "cmd");
     if (cmd == "get_music") {
         s->debug("[消息类型] 嵌入式端获取音乐列表");
         s->server_get_music(bev, root);
@@ -465,6 +790,31 @@ void Server::read_cb(struct bufferevent *bev, void *ctx)
     } else if (cmd == "search_music") {
         s->debug("[消息类型] 搜索音乐");
         s->server_search_music(bev, root);
+    } else if (cmd == "music.search.song") {
+        s->debug("[消息类型] music.search.song");
+        if (music_api_configured()) {
+            reply_music_search_song(s, bev, root, cmd);
+        } else {
+            proxy_music_service_list(s, bev, root, cmd, "/music/search/song", "song");
+        }
+    } else if (cmd == "music.search.playlist") {
+        s->debug("[消息类型] music.search.playlist");
+        proxy_music_service_list(s, bev, root, cmd, "/music/search/playlist", "playlist");
+    } else if (cmd == "music.search.artist") {
+        s->debug("[消息类型] music.search.artist");
+        proxy_music_service_list(s, bev, root, cmd, "/music/search/artist", "artist");
+    } else if (cmd == "music.playlist.detail") {
+        s->debug("[消息类型] music.playlist.detail");
+        proxy_music_service_detail(s, bev, root, cmd, "/music/playlist/detail", "song");
+    } else if (cmd == "music.artist.hot") {
+        s->debug("[消息类型] music.artist.hot");
+        proxy_music_service_detail(s, bev, root, cmd, "/music/artist/hot", "song");
+    } else if (cmd == "music.url.resolve") {
+        s->debug("[消息类型] music.url.resolve");
+        proxy_music_service_resolve(s, bev, root, cmd);
+    } else if (cmd == "music.transport.report") {
+        s->debug("[消息类型] music.transport.report");
+        reply_music_transport_report(s, bev, root, cmd);
     } else if (cmd == "device_report") {
         s->m_player_info->player_device_update_infolist(bev, root, s);
     } else if (cmd == "upload_music_list") {
@@ -490,6 +840,7 @@ void Server::read_cb(struct bufferevent *bev, void *ctx)
         s->server_device_reply_handle(bev, root);
     } else {
         s->debug("未知命令：%s", cmd.c_str());
+    }
     }
 }
 
@@ -648,11 +999,8 @@ bool Server::server_get_play_url(struct bufferevent *bev, const Json::Value &roo
         reply["result"] = "fail";
         return server_send_data(bev, reply);
     }
-    const char *qual = getenv("SMART_SPEAKER_MUSIC_QUALITY");
-    if (qual == NULL || qual[0] == '\0') {
-        qual = "128k";
-    }
-    char *url = music_get_url(src.c_str(), sid.c_str(), qual);
+    const std::string &qual = server_runtime_config().legacy_quality;
+    char *url = music_get_url(src.c_str(), sid.c_str(), qual.c_str());
     if (url != NULL && url[0] != '\0') {
         reply["result"] = "ok";
         reply["play_url"] = std::string(url);
@@ -684,15 +1032,14 @@ bool Server::server_resolve_music(struct bufferevent *bev, const Json::Value &ro
     }
     music_resolve_result_t r;
     memset(&r, 0, sizeof(r));
-    const char *plat = getenv("SMART_SPEAKER_MUSIC_PLATFORM");
-    const char *qual = getenv("SMART_SPEAKER_MUSIC_QUALITY");
-    if (plat == NULL || plat[0] == '\0') {
-        plat = "auto";
+    const ServerRuntimeConfig &cfg = server_runtime_config();
+    std::string plat = cfg.legacy_platform;
+    music_remote_apply_source_hints(kw, plat, cfg.legacy_platform);
+    if (kw.empty() || music_remote_keyword_is_vague(kw)) {
+        reply["result"] = "fail";
+        return server_send_data(bev, reply);
     }
-    if (qual == NULL || qual[0] == '\0') {
-        qual = "128k";
-    }
-    if (music_resolve_keyword(kw.c_str(), plat, qual, &r) != Ok) {
+    if (music_resolve_keyword(kw.c_str(), plat.c_str(), cfg.legacy_quality.c_str(), &r) != Ok) {
         reply["result"] = "fail";
         return server_send_data(bev, reply);
     }
@@ -703,8 +1050,8 @@ bool Server::server_resolve_music(struct bufferevent *bev, const Json::Value &ro
     reply["song_id"] = std::string(r.song_id);
     reply["singer"] = std::string(r.singer);
     reply["song"] = std::string(r.song);
-    Server::debug("[resolve_music] source=%s keyword=%s singer=%s song=%s play_url=%s",
-                  r.source != NULL ? r.source : "", kw.c_str(), r.singer, r.song, r.play_url);
+    Server::debug("[resolve_music] keyword=%s singer=%s song=%s play_url=%s", kw.c_str(), r.singer, r.song,
+                  r.play_url);
     music_free_resolve_result(&r);
     return server_send_data(bev, reply);
 }
@@ -792,48 +1139,49 @@ bool Server::server_send_data(struct bufferevent *bev, const Json::Value &root)
     return true;
 }
 
-bool Server::server_read_data(struct bufferevent *bev, Json::Value *root)
+int Server::server_try_read_one_json(struct bufferevent *bev, Json::Value *root)
 {
-    char len_buf[sizeof(int)] = {0};
-    int read_len = 0;
-    while (read_len < (int)sizeof(int)) {
-        int n = bufferevent_read(bev, len_buf + read_len, sizeof(int) - read_len);
-        if (n <= 0) {
-            Server::debug("读取消息长度失败（连接关闭或错误）");
-            return false;
-        }
-        read_len += n;
-    }
-    int msg_len = *(int *)len_buf;
-
+    struct evbuffer *in;
     const int MAX_MSG_LEN = 1024 * 1024;
+    char len_buf[sizeof(int)];
+    int msg_len;
+    size_t nbuf;
+
+    if (bev == NULL || root == NULL) {
+        return -1;
+    }
+    in = bufferevent_get_input(bev);
+    nbuf = evbuffer_get_length(in);
+    if (nbuf < sizeof(int)) {
+        return 0;
+    }
+    evbuffer_copyout(in, len_buf, sizeof(len_buf));
+    memcpy(&msg_len, len_buf, sizeof(msg_len));
+
     if (msg_len <= 0 || msg_len > MAX_MSG_LEN) {
         Server::debug("无效消息长度：%d（允许范围：1-%d）", msg_len, MAX_MSG_LEN);
-        return false;
+        evbuffer_drain(in, sizeof(int));
+        return -1;
+    }
+    if (nbuf < sizeof(int) + (size_t)msg_len) {
+        return 0;
     }
 
+    evbuffer_drain(in, sizeof(int));
     std::string msg;
     msg.resize((size_t)msg_len);
-    read_len = 0;
-    while (read_len < msg_len) {
-        int n = bufferevent_read(bev, &msg[read_len], msg_len - read_len);
-        if (n <= 0) {
-            Server::debug("读取消息体失败");
-            return false;
-        }
-        read_len += n;
-    }
+    evbuffer_remove(in, &msg[0], (size_t)msg_len);
 
     Json::Reader reader;
     if (!reader.parse(msg, *root)) {
         Server::debug("JSON解析失败：%s", reader.getFormattedErrorMessages().c_str());
-        return false;
+        return -1;
     }
     if (!root->isObject()) {
         Server::debug("JSON类型错误：必须是对象类型");
-        return false;
+        return -1;
     }
-    return true;
+    return 1;
 }
 
 void Server::event_cb(struct bufferevent *bev, short what, void *ctx)

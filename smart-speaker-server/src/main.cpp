@@ -1,45 +1,29 @@
 #include "server.h"
 #include "app_log.h"
+#include "music_runtime_init.h"
+#include "music_service_client.h"
+#include "runtime_config.h"
 
-#include <cstdlib>
 #include <iostream>
-
-namespace {
-
-const char *server_bind_ip(void)
-{
-    const char *value = getenv("SMART_SPEAKER_SERVER_IP");
-    if (value != NULL && value[0] != '\0') {
-        return value;
-    }
-    return "0.0.0.0";
-}
-
-int server_bind_port(void)
-{
-    const char *value = getenv("SMART_SPEAKER_SERVER_PORT");
-    char *end = NULL;
-    long port;
-    if (value == NULL || value[0] == '\0') {
-        return PORT;
-    }
-    port = strtol(value, &end, 10);
-    if (end == value || *end != '\0' || port <= 0 || port > 65535) {
-        return PORT;
-    }
-    return (int)port;
-}
-
-}  // namespace
 
 int main()
 {
     app_log_init("server");
+    if (music_runtime_init() != 0) {
+        return 1;
+    }
+    const ServerRuntimeConfig &cfg = server_runtime_config();
+    std::string music_service_error;
+    if (!music_service_restart_local(&music_service_error)) {
+        std::cerr << "music-service 未就绪：" << music_service_error << std::endl;
+    }
     Server server;
     if (!server.initialized_ok()) {
         std::cerr << "服务端初始化失败：请根据上方 [MySQL] 提示创建库/用户或检查 mysqld。" << std::endl;
+        music_service_shutdown_spawned_process();
         return 1;
     }
-    server.listen(server_bind_ip(), server_bind_port());
+    server.listen(cfg.bind_ip.c_str(), cfg.bind_port);
+    music_service_shutdown_spawned_process();
     return 0;
 }

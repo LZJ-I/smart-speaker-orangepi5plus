@@ -35,7 +35,8 @@ public:
     static void listener_cb(struct evconnlistener *, evutil_socket_t, struct sockaddr *, int, void *);
     static void read_cb(struct bufferevent *bev, void *ctx);
 
-    bool server_read_data(struct bufferevent *bev, Json::Value *root);
+    /** @return 1 已解析一条；0 数据不足待下次 read；负值 已记录错误并丢弃当前帧/长度头 */
+    int server_try_read_one_json(struct bufferevent *bev, Json::Value *root);
     bool server_send_data(struct bufferevent *bev, const Json::Value &root);
 
     bool server_get_music(struct bufferevent *bev, const Json::Value &root);
