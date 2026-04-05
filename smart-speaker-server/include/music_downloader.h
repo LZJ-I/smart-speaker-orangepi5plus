@@ -37,6 +37,22 @@ typedef struct {
 
 char *music_get_url(const char *source, const char *song_id, const char *quality);
 
+int music_api_configured(void);
+
+typedef struct {
+    char *play_url;
+    char *source;
+    char *song_id;
+    char *singer;
+    char *song;
+} music_resolve_result_t;
+
+music_result_t music_resolve_keyword(const char *keyword, const char *platform, const char *quality,
+                                     music_resolve_result_t *out);
+void music_free_resolve_result(music_resolve_result_t *out);
+
+char *music_search_first_url(const char *keyword, const char *platform, const char *quality);
+
 music_result_t music_search(const char *keyword, const char *platform, music_search_result_t *result);
 music_result_t music_search_page(const char *keyword, const char *platform, uint32_t page, uint32_t page_size,
                                  music_search_result_t *result);

@@ -70,6 +70,19 @@ bishe/
 └── downloads/           # 下载文件目录
 ```
 
+## 能力与接口摘要
+
+| 能力 | C 符号 | 说明 |
+|------|--------|------|
+| 搜索分页 | `music_search_page` | QQ/网易云聚合（不消耗音源 Key） |
+| 单条取链 | `music_get_url` | 调用第三方音源 API，**依赖环境变量 `SMART_SPEAKER_MUSIC_API_KEY`** |
+| 是否已配置 Key | `music_api_configured` | 未配置则取链与 `music_resolve_keyword` / `music_search_first_url` 失败 |
+| 关键词→首条+单链 | `music_resolve_keyword` / `music_free_resolve_result` | 一次搜索（1 条）+ 一次取链，返回元数据与 `play_url` |
+| 仅首条 URL | `music_search_first_url` | 同上，只返回 URL 字符串 |
+| 下载 | `music_download` 等 | 需有效取链 URL |
+
+示例：`examples/search_first_url/music_search_first_url`（需 `export SMART_SPEAKER_MUSIC_API_KEY=...` 后运行）。
+
 ## ⚠️ 重要说明
 
 - **下载功能**：支持所有平台

@@ -32,15 +32,28 @@ static const char *platform_from_env(void)
     return "auto";
 }
 
+static const char *quality_from_env(void)
+{
+    const char *q = getenv("SMART_SPEAKER_MUSIC_QUALITY");
+    if (q != NULL && q[0] != '\0') {
+        return q;
+    }
+    return "128k";
+}
+
 bool music_remote_list_music_page(const std::string &keyword, int page, int page_size, Json::Value &music,
                                   int &out_total, int &out_total_pages)
 {
     music_search_result_t res;
     music_result_t mr;
+    const char *qual;
     size_t i;
 
     memset(&res, 0, sizeof(res));
     if (page <= 0 || page_size <= 0 || keyword.empty()) {
+        return false;
+    }
+    if (!music_api_configured()) {
         return false;
     }
 
@@ -51,16 +64,30 @@ bool music_remote_list_music_page(const std::string &keyword, int page, int page
 
     out_total = (int)res.total;
     out_total_pages = (int)res.total_pages;
+    qual = quality_from_env();
 
     for (i = 0; i < res.count; ++i) {
         music_info_t *info = &res.results[i];
         Json::Value item(Json::objectValue);
+        char *url = NULL;
 
         item["singer"] = std::string(info->artist);
         item["song"] = std::string(info->name);
         item["path"] = "";
         item["source"] = std::string(info->source);
         item["song_id"] = std::string(info->id);
+
+        if (i == 0) {
+            url = music_get_url(info->source, info->id, qual);
+            if (url != NULL && url[0] != '\0') {
+                item["play_url"] = std::string(url);
+                music_free_string(url);
+            } else {
+                if (url != NULL) {
+                    music_free_string(url);
+                }
+            }
+        }
         music.append(item);
     }
 

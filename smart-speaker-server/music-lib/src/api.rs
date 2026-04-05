@@ -1,9 +1,28 @@
 //! API 模块 - 负责与音乐 API 交互，获取音乐下载链接
 use serde::Deserialize;
 use reqwest::blocking::Client;
+use std::env;
 
-const API_URL: &str = "https://source.shiqianjiang.cn/api/music";
-const API_KEY: &str = "CERU_KEY-53DAC0A06479925D774AC4B8A5F8A87E25A4D6333120";
+const DEFAULT_API_URL: &str = "https://source.shiqianjiang.cn/api/music";
+
+pub fn music_api_url() -> String {
+    env::var("SMART_SPEAKER_MUSIC_API_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_API_URL.to_string())
+}
+
+/// 是否已配置第三方音源 Key（未配置则关闭在线取链，与搜索列表取 URL）
+pub fn is_music_api_configured() -> bool {
+    music_api_key().is_some()
+}
+
+pub fn music_api_key() -> Option<String> {
+    env::var("SMART_SPEAKER_MUSIC_API_KEY")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
 
 /// 支持的下载平台
 const SUPPORTED_DOWNLOAD_SOURCES: &[&str] = &["kw", "mg", "kg", "tx", "wy"];
@@ -73,6 +92,10 @@ pub struct ApiResponse {
 /// # 返回
 /// 成功时返回音乐下载链接，失败时返回错误信息
 pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<String, String> {
+    let api_key = music_api_key().ok_or_else(|| {
+        "未配置环境变量 SMART_SPEAKER_MUSIC_API_KEY，在线取链已关闭".to_string()
+    })?;
+
     // 验证平台
     if !is_valid_download_source(source) {
         return Err(format!(
@@ -107,8 +130,12 @@ pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<Strin
         ));
     }
     
-    let url = format!("{}/url?source={}&songId={}&quality={}", API_URL, source, song_id, quality);
-    
+    let base = music_api_url().trim_end_matches('/').to_string();
+    let url = format!(
+        "{}/url?source={}&songId={}&quality={}",
+        base, source, song_id, quality
+    );
+
     let resp = Client::builder()
         .user_agent(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -116,7 +143,7 @@ pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<Strin
         .build()
         .map_err(|e| e.to_string())?
         .get(&url)
-        .header("X-API-Key", API_KEY)
+        .header("X-API-Key", api_key)
         .send()
         .map_err(|e| e.to_string())?;
     

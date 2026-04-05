@@ -449,6 +449,9 @@ void Server::read_cb(struct bufferevent *bev, void *ctx)
     } else if (cmd == "get_play_url") {
         s->debug("[消息类型] get_play_url");
         s->server_get_play_url(bev, root);
+    } else if (cmd == "resolve_music") {
+        s->debug("[消息类型] resolve_music");
+        s->server_resolve_music(bev, root);
     } else if (cmd == "search_music") {
         s->debug("[消息类型] 搜索音乐");
         s->server_search_music(bev, root);
@@ -621,6 +624,10 @@ bool Server::server_get_play_url(struct bufferevent *bev, const Json::Value &roo
 {
     Json::Value reply(Json::objectValue);
     reply["cmd"] = "reply_get_play_url";
+    if (!music_api_configured()) {
+        reply["result"] = "disabled";
+        return server_send_data(bev, reply);
+    }
     if (!json_has_string(root, "source") || !json_has_string(root, "song_id")) {
         reply["result"] = "fail";
         return server_send_data(bev, reply);
@@ -646,6 +653,46 @@ bool Server::server_get_play_url(struct bufferevent *bev, const Json::Value &roo
             music_free_string(url);
         }
     }
+    return server_send_data(bev, reply);
+}
+
+bool Server::server_resolve_music(struct bufferevent *bev, const Json::Value &root)
+{
+    Json::Value reply(Json::objectValue);
+    reply["cmd"] = "reply_resolve_music";
+    std::string kw = json_string_or_empty(root, "keyword");
+    trim_keyword(kw);
+    if (kw.empty() || music_remote_keyword_is_vague(kw)) {
+        reply["result"] = "fail";
+        return server_send_data(bev, reply);
+    }
+    if (!music_api_configured()) {
+        reply["result"] = "disabled";
+        reply["online_search_enabled"] = false;
+        return server_send_data(bev, reply);
+    }
+    music_resolve_result_t r;
+    memset(&r, 0, sizeof(r));
+    const char *plat = getenv("SMART_SPEAKER_MUSIC_PLATFORM");
+    const char *qual = getenv("SMART_SPEAKER_MUSIC_QUALITY");
+    if (plat == NULL || plat[0] == '\0') {
+        plat = "auto";
+    }
+    if (qual == NULL || qual[0] == '\0') {
+        qual = "128k";
+    }
+    if (music_resolve_keyword(kw.c_str(), plat, qual, &r) != Ok) {
+        reply["result"] = "fail";
+        return server_send_data(bev, reply);
+    }
+    reply["result"] = "ok";
+    reply["online_search_enabled"] = true;
+    reply["play_url"] = std::string(r.play_url);
+    reply["source"] = std::string(r.source);
+    reply["song_id"] = std::string(r.song_id);
+    reply["singer"] = std::string(r.singer);
+    reply["song"] = std::string(r.song);
+    music_free_resolve_result(&r);
     return server_send_data(bev, reply);
 }
 
@@ -675,15 +722,24 @@ bool Server::server_list_music(struct bufferevent *bev, const Json::Value &root)
 
     if (keyword.empty() || music_remote_keyword_is_vague(keyword)) {
         fill_list_music_from_local_cache(music, page, page_size, total, total_pages);
+        reply["online_search_enabled"] = true;
     } else {
-        int remote_total = 0;
-        int remote_tp = 0;
-        if (music_remote_list_music_page(keyword, page, page_size, music, remote_total, remote_tp) &&
-            music.size() > 0) {
-            total = remote_total;
-            total_pages = remote_tp;
+        if (!music_api_configured()) {
+            reply["online_search_enabled"] = false;
+            total = 0;
+            total_pages = 0;
+            music = Json::Value(Json::arrayValue);
         } else {
-            fill_list_music_from_local_keyword(keyword, music, page, page_size, total, total_pages);
+            reply["online_search_enabled"] = true;
+            int remote_total = 0;
+            int remote_tp = 0;
+            if (music_remote_list_music_page(keyword, page, page_size, music, remote_total, remote_tp) &&
+                music.size() > 0) {
+                total = remote_total;
+                total_pages = remote_tp;
+            } else {
+                fill_list_music_from_local_keyword(keyword, music, page, page_size, total, total_pages);
+            }
         }
     }
 

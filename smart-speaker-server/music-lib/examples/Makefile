@@ -9,12 +9,14 @@ TARGET_SEARCH = music_search
 TARGET_DOWNLOAD = music_download
 TARGET_SEARCH_AND_DOWNLOAD = music_search_and_download
 TARGET_URL = music_url
+TARGET_SEARCH_FIRST_URL = music_search_first_url
 
 # 源文件在子目录中
 SOURCE_SEARCH = search/search.c
 SOURCE_DOWNLOAD = download/download.c
 SOURCE_SEARCH_AND_DOWNLOAD = search_and_download/search_and_download.c
 SOURCE_URL = url/url.c
+SOURCE_SEARCH_FIRST_URL_SRC = search_first_url/search_first_url.c
 
 HEADER = music.h
 
@@ -38,7 +40,7 @@ else
 endif
 
 # 默认目标：编译所有测试程序
-all: check-rust-lib $(TARGET_SEARCH) $(TARGET_DOWNLOAD) $(TARGET_SEARCH_AND_DOWNLOAD) $(TARGET_URL)
+all: check-rust-lib $(TARGET_SEARCH) $(TARGET_DOWNLOAD) $(TARGET_SEARCH_AND_DOWNLOAD) $(TARGET_URL) $(TARGET_SEARCH_FIRST_URL)
 
 # 编译各个测试程序
 $(TARGET_SEARCH): $(SOURCE_SEARCH) $(HEADER)
@@ -59,6 +61,11 @@ $(TARGET_SEARCH_AND_DOWNLOAD): $(SOURCE_SEARCH_AND_DOWNLOAD) $(HEADER)
 $(TARGET_URL): $(SOURCE_URL) $(HEADER)
 	@echo "编译获取直链测试程序..."
 	$(CC) $(CFLAGS) $(SOURCE_URL) -o $(TARGET_URL) $(LDFLAGS) $(RPATH_FLAG)
+	@echo "编译完成！"
+
+$(TARGET_SEARCH_FIRST_URL): $(SOURCE_SEARCH_FIRST_URL_SRC) $(HEADER)
+	@echo "编译关键词首条取链测试程序..."
+	$(CC) $(CFLAGS) $(SOURCE_SEARCH_FIRST_URL_SRC) -o $(TARGET_SEARCH_FIRST_URL) $(LDFLAGS) $(RPATH_FLAG)
 	@echo "编译完成！"
 
 # 检查 Rust 库是否存在
@@ -96,7 +103,7 @@ url: $(TARGET_URL) check-rust-lib
 # 清理编译文件
 clean:
 	@echo "清理编译文件..."
-	@rm -f $(TARGET_SEARCH) $(TARGET_DOWNLOAD) $(TARGET_SEARCH_AND_DOWNLOAD) $(TARGET_URL)
+	@rm -f $(TARGET_SEARCH) $(TARGET_DOWNLOAD) $(TARGET_SEARCH_AND_DOWNLOAD) $(TARGET_URL) $(TARGET_SEARCH_FIRST_URL)
 	@echo "清理完成！"
 
 # 清理所有文件（包括 Rust 库）

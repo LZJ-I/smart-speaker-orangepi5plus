@@ -73,4 +73,20 @@ music_result_t music_download_with_path(
 char* music_get_extension(const char* quality);
 void music_free_string(char* s);
 
+int music_api_configured(void);
+
+typedef struct {
+    char* play_url;
+    char* source;
+    char* song_id;
+    char* singer;
+    char* song;
+} music_resolve_result_t;
+
+music_result_t music_resolve_keyword(const char* keyword, const char* platform, const char* quality,
+                                     music_resolve_result_t* out);
+void music_free_resolve_result(music_resolve_result_t* out);
+
+char* music_search_first_url(const char* keyword, const char* platform, const char* quality);
+
 #endif

@@ -199,6 +199,170 @@ pub extern "C" fn music_free_string(s: *mut c_char) {
     }
 }
 
+/// 是否已配置 `SMART_SPEAKER_MUSIC_API_KEY`（未配置则无法在线取链）
+#[unsafe(no_mangle)]
+pub extern "C" fn music_api_configured() -> i32 {
+    if api::is_music_api_configured() {
+        1
+    } else {
+        0
+    }
+}
+
+/// 关键词 → 首条搜索 + 单条取链结果（供服务端/示例一次调用完成）
+#[repr(C)]
+pub struct CMusicResolveResult {
+    pub play_url: *mut c_char,
+    pub source: *mut c_char,
+    pub song_id: *mut c_char,
+    pub singer: *mut c_char,
+    pub song: *mut c_char,
+}
+
+fn str_to_c_raw(s: &str) -> *mut c_char {
+    match CString::new(s.as_bytes()) {
+        Ok(c) => c.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn music_resolve_keyword(
+    keyword: *const c_char,
+    platform: *const c_char,
+    quality: *const c_char,
+    out: *mut CMusicResolveResult,
+) -> Result {
+    if keyword.is_null() || platform.is_null() || quality.is_null() || out.is_null() {
+        return Result::InvalidParam;
+    }
+    unsafe {
+        (*out).play_url = std::ptr::null_mut();
+        (*out).source = std::ptr::null_mut();
+        (*out).song_id = std::ptr::null_mut();
+        (*out).singer = std::ptr::null_mut();
+        (*out).song = std::ptr::null_mut();
+    }
+    if !api::is_music_api_configured() {
+        eprintln!("music_resolve_keyword: 未配置 SMART_SPEAKER_MUSIC_API_KEY");
+        return Result::ApiError;
+    }
+    let keyword = match unsafe { CStr::from_ptr(keyword).to_str() } {
+        Ok(s) => s,
+        Err(_) => return Result::InvalidParam,
+    };
+    let platform = match unsafe { CStr::from_ptr(platform).to_str() } {
+        Ok(s) => s,
+        Err(_) => return Result::InvalidParam,
+    };
+    let quality = match unsafe { CStr::from_ptr(quality).to_str() } {
+        Ok(s) => s,
+        Err(_) => return Result::InvalidParam,
+    };
+    let page = match search::search_music_paged(keyword, platform, 1, 1) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("music_resolve_keyword 搜索: {}", e);
+            return Result::ApiError;
+        }
+    };
+    let first = match page.songs.into_iter().next() {
+        Some(s) => s,
+        None => return Result::ApiError,
+    };
+    let url = match api::get_music_url(&first.source, &first.id, quality) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("music_resolve_keyword 取链: {}", e);
+            return Result::ApiError;
+        }
+    };
+    let pu = str_to_c_raw(&url);
+    let src = str_to_c_raw(&first.source);
+    let sid = str_to_c_raw(&first.id);
+    let art = str_to_c_raw(&first.artist);
+    let name = str_to_c_raw(&first.name);
+    if pu.is_null() || src.is_null() || sid.is_null() || art.is_null() || name.is_null() {
+        if !pu.is_null() {
+            music_free_string(pu);
+        }
+        if !src.is_null() {
+            music_free_string(src);
+        }
+        if !sid.is_null() {
+            music_free_string(sid);
+        }
+        if !art.is_null() {
+            music_free_string(art);
+        }
+        if !name.is_null() {
+            music_free_string(name);
+        }
+        return Result::ApiError;
+    }
+    unsafe {
+        (*out).play_url = pu;
+        (*out).source = src;
+        (*out).song_id = sid;
+        (*out).singer = art;
+        (*out).song = name;
+    }
+    Result::Ok
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn music_free_resolve_result(out: *mut CMusicResolveResult) {
+    if out.is_null() {
+        return;
+    }
+    unsafe {
+        if !(*out).play_url.is_null() {
+            music_free_string((*out).play_url);
+            (*out).play_url = std::ptr::null_mut();
+        }
+        if !(*out).source.is_null() {
+            music_free_string((*out).source);
+            (*out).source = std::ptr::null_mut();
+        }
+        if !(*out).song_id.is_null() {
+            music_free_string((*out).song_id);
+            (*out).song_id = std::ptr::null_mut();
+        }
+        if !(*out).singer.is_null() {
+            music_free_string((*out).singer);
+            (*out).singer = std::ptr::null_mut();
+        }
+        if !(*out).song.is_null() {
+            music_free_string((*out).song);
+            (*out).song = std::ptr::null_mut();
+        }
+    }
+}
+
+/// 仅返回首条可播放 URL（内部一次搜索 + 一次取链）；失败返回 NULL，成功需 `music_free_string` 释放
+#[unsafe(no_mangle)]
+pub extern "C" fn music_search_first_url(
+    keyword: *const c_char,
+    platform: *const c_char,
+    quality: *const c_char,
+) -> *mut c_char {
+    let mut tmp = CMusicResolveResult {
+        play_url: std::ptr::null_mut(),
+        source: std::ptr::null_mut(),
+        song_id: std::ptr::null_mut(),
+        singer: std::ptr::null_mut(),
+        song: std::ptr::null_mut(),
+    };
+    match music_resolve_keyword(keyword, platform, quality, &mut tmp) {
+        Result::Ok => {}
+        _ => return std::ptr::null_mut(),
+    }
+    let u = tmp.play_url;
+    tmp.play_url = std::ptr::null_mut();
+    music_free_resolve_result(&mut tmp);
+    u
+}
+
 /// 搜索音乐
 /// 
 /// # 参数

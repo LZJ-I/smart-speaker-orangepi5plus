@@ -33,8 +33,10 @@ sudo apt install -y \
 
 - **Rust**：建议 `rustup` 安装 stable（需支持 `edition = "2024"` 的 toolchain，或把 `music-lib/Cargo.toml` 中 `edition` 改为 `2021`）。
 - **OpenSSL**：`music-lib` 依赖 `openssl-sys`（`libssl-dev` 已覆盖）。
-- **环境变量**（可选）：
-  - `SMART_SPEAKER_MUSIC_PLATFORM`：搜索平台，`auto`（默认，**优先网易云再 QQ**）/`tx`/`wy`。当前环境下 QQ 公开搜索接口常返回 **HTTP 500**，若强制 `tx` 会导致搜不到，建议用 **`wy` 或 `auto`**。
+- **环境变量**：
+  - **`SMART_SPEAKER_MUSIC_API_KEY`（必填，否则关闭在线取链与精准在线搜歌）**：第三方音源接口 Key（与洛雪等脚本中 `X-API-Key` 一致）。未设置时，`list_music` 对**非泛化关键词**返回空列表且 `online_search_enabled=false`；`get_play_url` 返回 `result=disabled`；嵌入式端将播报「在线搜歌功能尚未配置」提示音（需用 `tools/gen_mode_tts_wav.sh` 生成 `assets/tts/online_music_unsupported.wav`）。
+  - `SMART_SPEAKER_MUSIC_API_URL`：音源 API 根路径，默认 `https://source.shiqianjiang.cn/api/music`。
+  - `SMART_SPEAKER_MUSIC_PLATFORM`：搜索平台，`auto`（默认，**优先网易云再 QQ**）/`tx`/`wy`。QQ 公开搜索接口常 **HTTP 500**，不建议单独 `tx`。
   - `SMART_SPEAKER_MUSIC_QUALITY`：取链音质，默认 `128k`
 
 **运行 `server_smart_speaker` 时**需能加载同目录相对路径下的 `music-lib/target/release/libmusic_downloader.so`（Makefile 已设置 `rpath`）；若移动可执行文件，请同步拷贝 `.so` 或设置 `LD_LIBRARY_PATH`。
@@ -110,6 +112,7 @@ make stop
 - `SMART_SPEAKER_SERVER_IP`：监听 IP，默认 `0.0.0.0`（见 `src/main.cpp`）
 - `SMART_SPEAKER_SERVER_PORT`：端口，默认 `8888`
 - `SMART_SPEAKER_MUSIC_PATH`：曲库扫描根目录，默认 `/var/www/html/music/`
+- `SMART_SPEAKER_MUSIC_API_KEY` / `SMART_SPEAKER_MUSIC_API_URL`：见上文 Rust 小节
 
 初始化失败（连不上 MySQL 等）时进程退出码为 1。
 
@@ -117,8 +120,9 @@ make stop
 
 ## 协议要点
 
-TCP：4 字节小端长度 + UTF-8 JSON。支持 `get_music`、`search_music`、`list_music`、`get_play_url`、`device_report`、各类 `app_*` 等（见 `src/server.cpp`）。
+TCP：4 字节小端长度 + UTF-8 JSON。支持 `get_music`、`search_music`、`list_music`、`get_play_url`、`resolve_music`、`device_report`、各类 `app_*` 等（见 `src/server.cpp`）。
 
-- **`list_music`**：可选字段 **`keyword`**。未传、`keyword` 为空或与泛意图同义（如 **`热门`**、`听歌`、`音乐` 等）时，返回**本地曲库**随机打乱后的分页；否则由 **`music-lib`** 走 QQ/网易云聚合搜索，每条结果含 `source`/`song_id`/`singer`/`song`（**不在此接口内批量取 `play_url`**，避免耗时超过客户端短连接超时；起播时由嵌入式端 **`get_play_url`** 或节点内已有直链解析）。远程失败或结果为空时回退为本地路径扫描关键词分页（与 `search_music` 类似）。
-- **`get_play_url`**：字段 **`source`**、**`song_id`**，响应 **`reply_get_play_url`**，`result` 为 `ok` 时含 **`play_url`**（供 `tx`/`wy` 等与 Apache 路径无关的曲目）。
+- **`list_music`**：可选字段 **`keyword`**。泛意图（空、`热门`、`听歌` 等）→ **本地**随机分页，并带 `online_search_enabled=true`。**精准关键词**且**已配置** `SMART_SPEAKER_MUSIC_API_KEY`：远程搜索分页；**仅第一条**填充 `play_url`（减少取链次数），其余条需客户端按需 `get_play_url`。未配置 Key：返回空 `music`、`online_search_enabled=false`。远程无结果时回退本地关键词分页。
+- **`get_play_url`**：字段 **`source`**、**`song_id`**。未配置 Key 时 `result=disabled`。否则 `result=ok` 且含 **`play_url`**。
+- **`resolve_music`**：字段 **`keyword`**（非泛化）。一次「搜索首条 + 取链」，响应 **`reply_resolve_music`**：`result` 为 `ok` 时含 `play_url`/`source`/`song_id`/`singer`/`song`；`disabled`/`fail` 含义同取链失败或未配置 Key。
 - **`search_music`**：仍表示仅扫本地磁盘路径的关键词分页。

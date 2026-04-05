@@ -41,6 +41,7 @@ public:
     bool server_get_music(struct bufferevent *bev, const Json::Value &root);
     bool server_list_music(struct bufferevent *bev, const Json::Value &root);
     bool server_get_play_url(struct bufferevent *bev, const Json::Value &root);
+    bool server_resolve_music(struct bufferevent *bev, const Json::Value &root);
     bool server_search_music(struct bufferevent *bev, const Json::Value &root);
     bool server_app_option(struct bufferevent *bev, Json::Value &root);
     bool server_device_reply_handle(struct bufferevent *bev, const Json::Value &root);
