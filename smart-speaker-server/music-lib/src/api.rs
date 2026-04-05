@@ -1,33 +1,76 @@
 //! API 模块 - 负责与音乐 API 交互，获取音乐下载链接
 use serde::Deserialize;
 use reqwest::blocking::Client;
-use std::env;
+use std::sync::Mutex;
 
 const DEFAULT_API_URL: &str = "https://source.shiqianjiang.cn/api/music";
 
-/// 与洛雪音源脚本一致：未设置环境变量时使用 `lx-music-request/<version>` 风格。
 const DEFAULT_LX_USER_AGENT: &str = "lx-music-request/2.12.0";
 
-pub fn music_api_url() -> String {
-    env::var("SMART_SPEAKER_MUSIC_API_URL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_API_URL.to_string())
+struct OnlineConfig {
+    api_url: String,
+    api_key: String,
+    user_agent: String,
 }
 
-/// 是否已配置第三方音源 Key（未配置则关闭在线取链，与搜索列表取 URL）
+static ONLINE: Mutex<Option<OnlineConfig>> = Mutex::new(None);
+
+pub fn configure_online(api_url: &str, api_key: &str, user_agent: &str) {
+    let mut g = ONLINE.lock().unwrap();
+    *g = Some(OnlineConfig {
+        api_url: api_url.to_string(),
+        api_key: api_key.to_string(),
+        user_agent: user_agent.to_string(),
+    });
+}
+
+pub fn music_api_url() -> String {
+    let g = ONLINE.lock().unwrap();
+    match *g {
+        Some(ref c) => {
+            let u = c.api_url.trim();
+            if u.is_empty() {
+                DEFAULT_API_URL.to_string()
+            } else {
+                u.to_string()
+            }
+        }
+        None => DEFAULT_API_URL.to_string(),
+    }
+}
+
 pub fn is_music_api_configured() -> bool {
     music_api_key().is_some()
 }
 
 pub fn music_api_key() -> Option<String> {
-    env::var("SMART_SPEAKER_MUSIC_API_KEY")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    let g = ONLINE.lock().unwrap();
+    g.as_ref().and_then(|c| {
+        let k = c.api_key.trim();
+        if k.is_empty() {
+            None
+        } else {
+            Some(k.to_string())
+        }
+    })
 }
 
-/// 支持的下载平台（与常见洛雪脚本 `MUSIC_SOURCE` 对齐）
+fn music_user_agent_for_client() -> String {
+    let g = ONLINE.lock().unwrap();
+    match *g {
+        Some(ref c) => {
+            let u = c.user_agent.trim();
+            if u.is_empty() {
+                DEFAULT_LX_USER_AGENT.to_string()
+            } else {
+                u.to_string()
+            }
+        }
+        None => DEFAULT_LX_USER_AGENT.to_string(),
+    }
+}
+
+/// 支持的下载平台（与常见洛雪音源脚本 `MUSIC_SOURCE` 对齐）
 const SUPPORTED_DOWNLOAD_SOURCES: &[&str] = &["kw", "mg", "kg", "tx", "wy", "git"];
 
 /// 酷我音乐 (kw) 支持的音质
@@ -50,7 +93,7 @@ const GIT_QUALITIES: &[&str] = &["128k", "320k", "flac"];
 
 /// 支持的音质（所有平台的合集）
 const SUPPORTED_QUALITIES: &[&str] = &[
-    "128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master"
+    "128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master",
 ];
 
 /// 验证下载平台是否有效
@@ -77,11 +120,7 @@ fn get_platform_qualities(source: &str) -> &'static [&'static str] {
 }
 
 fn url_request_client() -> Result<Client, String> {
-    let ua = env::var("SMART_SPEAKER_MUSIC_USER_AGENT")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_LX_USER_AGENT.to_string());
+    let ua = music_user_agent_for_client();
 
     Client::builder()
         .user_agent(ua)
@@ -95,6 +134,12 @@ fn is_quality_supported_for_platform(source: &str, quality: &str) -> bool {
     get_platform_qualities(source).contains(&quality)
 }
 
+/// 直链是否为 AAC（128k 酷我等易返回 `.aac`；无 libav 时 GStreamer 播不动）
+fn url_looks_like_aac(url: &str) -> bool {
+    let u = url.to_ascii_lowercase();
+    u.contains(".aac") || u.contains("format=aac") || u.contains("br=aac")
+}
+
 /// API 响应结构体
 #[derive(Deserialize)]
 pub struct ApiResponse {
@@ -103,54 +148,7 @@ pub struct ApiResponse {
     pub message: Option<String>,
 }
 
-/// 获取音乐下载链接
-/// 
-/// # 参数
-/// - source: 音乐平台源 ("kw", "mg", "kg", "tx", "wy")
-/// - song_id: 歌曲 ID
-/// - quality: 音质 ("128k", "320k", "flac" 等)
-/// 
-/// # 返回
-/// 成功时返回音乐下载链接，失败时返回错误信息
-pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<String, String> {
-    let api_key = music_api_key().ok_or_else(|| {
-        "未配置环境变量 SMART_SPEAKER_MUSIC_API_KEY，在线取链已关闭".to_string()
-    })?;
-
-    // 验证平台
-    if !is_valid_download_source(source) {
-        return Err(format!(
-            "无效的下载平台 '{}'，支持的平台有: {}",
-            source,
-            SUPPORTED_DOWNLOAD_SOURCES.join(", ")
-        ));
-    }
-    
-    // 验证歌曲 ID
-    if song_id.trim().is_empty() {
-        return Err("歌曲 ID 不能为空".to_string());
-    }
-    
-    // 验证音质
-    if !is_valid_quality(quality) {
-        return Err(format!(
-            "无效的音质 '{}'，支持的音质有: {}",
-            quality,
-            SUPPORTED_QUALITIES.join(", ")
-        ));
-    }
-    
-    // 验证该平台是否支持此音质
-    if !is_quality_supported_for_platform(source, quality) {
-        let platform_qualities = get_platform_qualities(source);
-        return Err(format!(
-            "平台 '{}' 不支持音质 '{}'，该平台支持的音质有: {}",
-            source,
-            quality,
-            platform_qualities.join(", ")
-        ));
-    }
-    
+fn fetch_music_url(source: &str, song_id: &str, quality: &str, api_key: &str) -> Result<String, String> {
     let base = music_api_url().trim_end_matches('/').to_string();
     let url = format!(
         "{}/url?source={}&songId={}&quality={}",
@@ -163,10 +161,9 @@ pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<Strin
         .header("X-API-Key", api_key)
         .send()
         .map_err(|e| e.to_string())?;
-    
-    let api_resp = resp.json::<ApiResponse>()
-        .map_err(|e| e.to_string())?;
-    
+
+    let api_resp = resp.json::<ApiResponse>().map_err(|e| e.to_string())?;
+
     match api_resp.code {
         200 => api_resp.url.ok_or_else(|| "No URL".to_string()),
         403 => Err(api_resp.message.unwrap_or("权限不足或Key失效".to_string())),
@@ -174,4 +171,53 @@ pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<Strin
         500 => Err(api_resp.message.unwrap_or("API 错误".to_string())),
         _ => Err(format!("API 错误: {}", api_resp.code)),
     }
+}
+
+/// 获取音乐下载链接
+pub fn get_music_url(source: &str, song_id: &str, quality: &str) -> Result<String, String> {
+    let api_key = music_api_key().ok_or_else(|| {
+        "未在 data/config/music.toml 配置 music_api_key，在线取链已关闭".to_string()
+    })?;
+
+    if !is_valid_download_source(source) {
+        return Err(format!(
+            "无效的下载平台 '{}'，支持的平台有: {}",
+            source,
+            SUPPORTED_DOWNLOAD_SOURCES.join(", ")
+        ));
+    }
+
+    if song_id.trim().is_empty() {
+        return Err("歌曲 ID 不能为空".to_string());
+    }
+
+    if !is_valid_quality(quality) {
+        return Err(format!(
+            "无效的音质 '{}'，支持的音质有: {}",
+            quality,
+            SUPPORTED_QUALITIES.join(", ")
+        ));
+    }
+
+    if !is_quality_supported_for_platform(source, quality) {
+        let platform_qualities = get_platform_qualities(source);
+        return Err(format!(
+            "平台 '{}' 不支持音质 '{}'，该平台支持的音质有: {}",
+            source,
+            quality,
+            platform_qualities.join(", ")
+        ));
+    }
+
+    let url = fetch_music_url(source, song_id, quality, &api_key)?;
+
+    if url_looks_like_aac(&url) && quality == "128k" && is_quality_supported_for_platform(source, "320k") {
+        if let Ok(u) = fetch_music_url(source, song_id, "320k", &api_key) {
+            if !url_looks_like_aac(&u) {
+                return Ok(u);
+            }
+        }
+    }
+
+    Ok(url)
 }

@@ -199,7 +199,26 @@ pub extern "C" fn music_free_string(s: *mut c_char) {
     }
 }
 
-/// 是否已配置 `SMART_SPEAKER_MUSIC_API_KEY`（未配置则无法在线取链）
+#[unsafe(no_mangle)]
+pub extern "C" fn music_configure_online(
+    api_url: *const c_char,
+    api_key: *const c_char,
+    user_agent: *const c_char,
+) {
+    fn to_owned(p: *const c_char) -> String {
+        if p.is_null() {
+            return String::new();
+        }
+        unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() }
+    }
+    api::configure_online(
+        &to_owned(api_url),
+        &to_owned(api_key),
+        &to_owned(user_agent),
+    );
+}
+
+/// 是否已在 `data/config/music.toml` 中配置 `music_api_key`
 #[unsafe(no_mangle)]
 pub extern "C" fn music_api_configured() -> i32 {
     if api::is_music_api_configured() {
@@ -244,7 +263,7 @@ pub extern "C" fn music_resolve_keyword(
         (*out).song = std::ptr::null_mut();
     }
     if !api::is_music_api_configured() {
-        eprintln!("music_resolve_keyword: 未配置 SMART_SPEAKER_MUSIC_API_KEY");
+        eprintln!("music_resolve_keyword: 未配置 data/config/music.toml 中的 music_api_key");
         return Result::ApiError;
     }
     let keyword = match unsafe { CStr::from_ptr(keyword).to_str() } {
@@ -367,7 +386,7 @@ pub extern "C" fn music_search_first_url(
 /// 
 /// # 参数
 /// - keyword: 搜索关键词
-/// - platform: 平台 ("tx" 为 QQ 音乐, "wy" 为网易云音乐, "auto" 优先 QQ 再网易云)
+/// - platform: tx/wy/kw/kg/mg 单源；auto 顺序（单次 HTTP 3s、全程≤10s）；all 并发（单次 HTTP 3s）
 /// - result: 搜索结果输出指针
 /// 
 /// # 返回

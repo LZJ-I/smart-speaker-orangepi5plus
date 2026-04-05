@@ -1,7 +1,6 @@
 #include "../music.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 int main(int argc, char *argv[])
@@ -10,19 +9,27 @@ int main(int argc, char *argv[])
     const char *keyword = "你从未离去";
     const char *quality = "128k";
 
-    if (argc >= 2) {
-        platform = argv[1];
-    }
-    if (argc >= 3) {
-        keyword = argv[2];
-    }
-    if (argc >= 4) {
-        quality = argv[3];
+    if (argc < 2) {
+        fprintf(stderr, "用法: %s <music_api_key> [platform] [keyword] [quality]\n", argv[0]);
+        fprintf(stderr, "（与 smart-speaker-server 中 data/config/music.toml 的 music_api_key 一致）\n");
+        return 2;
     }
 
+    music_configure_online("https://source.shiqianjiang.cn/api/music", argv[1], "lx-music-request/2.12.0");
+
     if (!music_api_configured()) {
-        fprintf(stderr, "未设置 SMART_SPEAKER_MUSIC_API_KEY，跳过取链。\n");
+        fprintf(stderr, "music_api_key 为空\n");
         return 2;
+    }
+
+    if (argc >= 3) {
+        platform = argv[2];
+    }
+    if (argc >= 4) {
+        keyword = argv[3];
+    }
+    if (argc >= 5) {
+        quality = argv[4];
     }
 
     char *url = music_search_first_url(keyword, platform, quality);

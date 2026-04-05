@@ -1,20 +1,29 @@
 //! 搜索模块 - 负责从各音乐平台搜索歌曲
 use reqwest::blocking::Client;
 use serde::Deserialize;
+use serde_json::Value;
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
 use std::vec::Vec;
 
 const HTTP_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
+/// 各平台单次搜索 HTTP 超时（`all` 并发与 `auto` 顺序里每次请求均相同）
+const HTTP_SEARCH_TIMEOUT: Duration = Duration::from_secs(3);
+/// `auto` 顺序尝试多平台时的总耗时上限
+const PRIORITY_SEARCH_TOTAL: Duration = Duration::from_secs(10);
+
 fn http_client() -> Result<Client, String> {
     Client::builder()
         .user_agent(HTTP_USER_AGENT)
+        .timeout(HTTP_SEARCH_TIMEOUT)
         .build()
         .map_err(|e| e.to_string())
 }
 
 /// 支持的搜索平台
-const SUPPORTED_SEARCH_PLATFORMS: &[&str] = &["tx", "wy", "auto"];
+const SUPPORTED_SEARCH_PLATFORMS: &[&str] = &["tx", "wy", "kw", "kg", "mg", "auto", "all"];
 
 /// 验证搜索平台是否有效
 fn is_valid_search_platform(platform: &str) -> bool {
@@ -22,6 +31,7 @@ fn is_valid_search_platform(platform: &str) -> bool {
 }
 
 /// 歌曲信息结构体
+#[derive(Clone)]
 pub struct SongInfo {
     pub id: String,
     pub name: String,
@@ -122,11 +132,7 @@ pub fn search_qq_music_paged(keyword: &str, page: u32, page_size: u32) -> Result
         w, page, page_size
     );
 
-    let resp = http_client()?
-        .get(&url)
-        .header("Referer", "https://y.qq.com/")
-        .send()
-        .map_err(|e| e.to_string())?;
+    let resp = http_client()?.get(&url).send().map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("QQ 音乐搜索 HTTP {}", resp.status()));
     }
@@ -219,11 +225,510 @@ pub fn search_netease_music_paged(keyword: &str, page: u32, page_size: u32) -> R
     })
 }
 
+fn empty_search_page(page: u32, page_size: u32) -> SearchPage {
+    SearchPage {
+        songs: Vec::new(),
+        total: 0,
+        page,
+        page_size,
+    }
+}
+
+fn value_as_string(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn kugou_singer_str(v: &Value) -> String {
+    if let Some(s) = v.as_str() {
+        return s.to_string();
+    }
+    if let Some(arr) = v.as_array() {
+        let mut parts = Vec::new();
+        for it in arr {
+            if let Some(n) = it.get("name").and_then(|x| x.as_str()) {
+                parts.push(n);
+            } else if let Some(s) = it.as_str() {
+                parts.push(s);
+            }
+        }
+        return parts.join("、");
+    }
+    String::new()
+}
+
+fn migu_sign(keyword: &str, timestamp_ms: &str) -> (String, &'static str) {
+    const DEVICE_ID: &str = "963B7AA0D21511ED807EE5846EC87D20";
+    const SIG_MD5: &str = "6cdc72a439cef99a3418d2a78aa28c73";
+    const MID: &str = "yyapp2d16148780a1dcc7408e06336b98cfd50";
+    let raw = format!("{}{}{}{}{}", keyword, SIG_MD5, MID, DEVICE_ID, timestamp_ms);
+    let digest = md5::compute(raw.as_bytes());
+    let sign = digest.iter().map(|b| format!("{:02x}", b)).collect();
+    (sign, DEVICE_ID)
+}
+
+fn migu_singer_list(v: &Value) -> String {
+    if let Some(s) = v.as_str() {
+        return s.to_string();
+    }
+    if let Some(arr) = v.as_array() {
+        let mut parts = Vec::new();
+        for it in arr {
+            if let Some(n) = it.get("name").and_then(|x| x.as_str()) {
+                parts.push(n);
+            }
+        }
+        return parts.join("、");
+    }
+    String::new()
+}
+
+fn push_kugou_track(item: &Value, songs: &mut Vec<SongInfo>, ids: &mut HashSet<String>) {
+    let id = value_as_string(item.get("Audioid").unwrap_or(&Value::Null));
+    if id.is_empty() {
+        return;
+    }
+    let hash = value_as_string(item.get("FileHash").unwrap_or(&Value::Null));
+    let key = format!("{}|{}", id, hash);
+    if !ids.insert(key) {
+        return;
+    }
+    songs.push(SongInfo {
+        id,
+        name: item
+            .get("SongName")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        artist: item
+            .get("Singers")
+            .map(|v| kugou_singer_str(v))
+            .unwrap_or_default(),
+        album: item
+            .get("AlbumName")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        source: "kg".to_string(),
+    });
+}
+
+fn parse_migu_songs(srd: &Value) -> (Vec<SongInfo>, usize) {
+    let mut songs = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let total = srd
+        .get("totalCount")
+        .map(|t| {
+            t.as_str()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| t.as_u64().unwrap_or(0) as usize)
+        })
+        .unwrap_or(0);
+    if let Some(outer) = srd.get("resultList").and_then(|x| x.as_array()) {
+        for group in outer {
+            if let Some(inner) = group.as_array() {
+                for data in inner {
+                    let sid = value_as_string(data.get("songId").unwrap_or(&Value::Null));
+                    let cid = value_as_string(data.get("copyrightId").unwrap_or(&Value::Null));
+                    if sid.is_empty() || cid.is_empty() {
+                        continue;
+                    }
+                    if !seen.insert(cid) {
+                        continue;
+                    }
+                    songs.push(SongInfo {
+                        id: sid,
+                        name: data
+                            .get("name")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        artist: data
+                            .get("singerList")
+                            .map(|v| migu_singer_list(v))
+                            .unwrap_or_default(),
+                        album: data
+                            .get("album")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        source: "mg".to_string(),
+                    });
+                }
+            }
+        }
+    }
+    (songs, total)
+}
+
+/// 酷我（与 lx `kw/musicSearch.js` 一致）
+pub fn search_kuwo_music_paged(keyword: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
+    let page = if page == 0 { 1 } else { page };
+    let page_size = if page_size == 0 { 10 } else { page_size };
+    let pn = page.saturating_sub(1);
+
+    for _attempt in 0u32..3u32 {
+        let q = urlencoding::encode(keyword);
+        let url = format!(
+            "http://search.kuwo.cn/r.s?client=kt&all={}&pn={}&rn={}&uid=794762570&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newver=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1&issubtitle=1",
+            q, pn, page_size
+        );
+        let resp = http_client()?.get(&url).send().map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("酷我搜索 HTTP {}", resp.status()));
+        }
+        let root: Value = resp.json().map_err(|e| e.to_string())?;
+        let total = root
+            .get("TOTAL")
+            .map(|t| {
+                t.as_str()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_else(|| t.as_u64().unwrap_or(0) as usize)
+            })
+            .unwrap_or(0);
+        let show = root
+            .get("SHOW")
+            .and_then(|t| t.as_str())
+            .unwrap_or("1");
+        if total != 0 && show == "0" {
+            continue;
+        }
+        let abslist = root
+            .get("abslist")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut songs = Vec::new();
+        for item in &abslist {
+            if item.get("N_MINFO").is_none() {
+                continue;
+            }
+            let rid = value_as_string(item.get("MUSICRID").unwrap_or(&Value::Null));
+            let id = rid
+                .strip_prefix("MUSIC_")
+                .unwrap_or(rid.as_str())
+                .to_string();
+            if id.is_empty() {
+                continue;
+            }
+            songs.push(SongInfo {
+                id,
+                name: item
+                    .get("SONGNAME")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                artist: item
+                    .get("ARTIST")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                album: item
+                    .get("ALBUM")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                source: "kw".to_string(),
+            });
+        }
+        if songs.is_empty() && total != 0 {
+            continue;
+        }
+        return Ok(SearchPage {
+            songs,
+            total,
+            page,
+            page_size,
+        });
+    }
+    Err("酷我搜索失败".to_string())
+}
+
+/// 酷狗（与 lx `kg/musicSearch.js` 一致）
+pub fn search_kugou_music_paged(keyword: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
+    let page = if page == 0 { 1 } else { page };
+    let page_size = if page_size == 0 { 10 } else { page_size };
+
+    for _attempt in 0u32..3u32 {
+        let k = urlencoding::encode(keyword);
+        let url = format!(
+            "https://songsearch.kugou.com/song_search_v2?keyword={}&page={}&pagesize={}&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1",
+            k, page, page_size
+        );
+        let resp = http_client()?.get(&url).send().map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("酷狗搜索 HTTP {}", resp.status()));
+        }
+        let root: Value = resp.json().map_err(|e| e.to_string())?;
+        if root.get("error_code").and_then(|c| c.as_i64()) != Some(0) {
+            continue;
+        }
+        let data = root.get("data").ok_or_else(|| "酷狗响应无 data".to_string())?;
+        let total = data
+            .get("total")
+            .map(|t| t.as_u64().unwrap_or(0) as usize)
+            .unwrap_or(0);
+        let lists = data
+            .get("lists")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut songs = Vec::new();
+        let mut ids: HashSet<String> = HashSet::new();
+        for item in &lists {
+            push_kugou_track(item, &mut songs, &mut ids);
+            if let Some(grp) = item.get("Grp").and_then(|g| g.as_array()) {
+                for ch in grp {
+                    push_kugou_track(ch, &mut songs, &mut ids);
+                }
+            }
+        }
+        if songs.is_empty() && total > 0 {
+            continue;
+        }
+        return Ok(SearchPage {
+            songs,
+            total,
+            page,
+            page_size,
+        });
+    }
+    Err("酷狗搜索失败".to_string())
+}
+
+/// 咪咕（与 lx `mg/musicSearch.js` 签名与 v3 接口一致）
+pub fn search_migu_music_paged(keyword: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
+    let page = if page == 0 { 1 } else { page };
+    let page_size = if page_size == 0 { 10 } else { page_size };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis().to_string())
+        .unwrap_or_else(|_| "0".into());
+    let (sign, device_id) = migu_sign(keyword, &ts);
+    let q = urlencoding::encode(keyword);
+    let url = format!(
+        "https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=0&isCopyright=1&searchSwitch=%7B%22song%22%3A1%2C%22album%22%3A0%2C%22singer%22%3A0%2C%22tagSong%22%3A1%2C%22mvSong%22%3A0%2C%22bestShow%22%3A1%2C%22songlist%22%3A0%2C%22lyricSong%22%3A0%7D&pageSize={}&text={}&pageNo={}&sort=0&sid=USS",
+        page_size, q, page
+    );
+    let resp = http_client()?
+        .get(&url)
+        .header("uiVersion", "A_music_3.6.1")
+        .header("deviceId", device_id)
+        .header("timestamp", &ts)
+        .header("sign", &sign)
+        .header("channel", "0146921")
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Linux; U; Android 11.0.0; zh-cn; MI 11 Build/OPR1.170623.032) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30",
+        )
+        .send()
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("咪咕搜索 HTTP {}", resp.status()));
+    }
+    let root: Value = resp.json().map_err(|e| e.to_string())?;
+    if root.get("code").and_then(|c| c.as_str()) != Some("000000") {
+        let info = root
+            .get("info")
+            .and_then(|x| x.as_str())
+            .unwrap_or("咪咕搜索失败");
+        return Err(info.to_string());
+    }
+    let srd_val = root
+        .get("songResultData")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let (songs, total) = parse_migu_songs(&srd_val);
+    Ok(SearchPage {
+        songs,
+        total,
+        page,
+        page_size,
+    })
+}
+
+fn dedupe_key(song: &SongInfo) -> String {
+    format!(
+        "{}|{}",
+        song.name.to_lowercase(),
+        song.artist.to_lowercase()
+    )
+}
+
+/// `auto`：按优先级依次搜，首源有结果即返回；单次 HTTP `HTTP_SEARCH_TIMEOUT`；全程不超过 `PRIORITY_SEARCH_TOTAL`
+fn search_priority_paged(keyword: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
+    const ORDER: &[&str] = &["tx", "wy", "kw", "kg", "mg"];
+    let start = Instant::now();
+    let mut last_note = String::new();
+    for p in ORDER {
+        let elapsed = start.elapsed();
+        if elapsed >= PRIORITY_SEARCH_TOTAL {
+            last_note = format!(
+                "顺序搜总时限{}s已到（单次 HTTP {}s）",
+                PRIORITY_SEARCH_TOTAL.as_secs(),
+                HTTP_SEARCH_TIMEOUT.as_secs()
+            );
+            break;
+        }
+        if PRIORITY_SEARCH_TOTAL.saturating_sub(elapsed) < HTTP_SEARCH_TIMEOUT {
+            last_note = format!(
+                "顺序搜总时限{}s：剩余时间不足单次 HTTP {}s，未再试下一源",
+                PRIORITY_SEARCH_TOTAL.as_secs(),
+                HTTP_SEARCH_TIMEOUT.as_secs()
+            );
+            break;
+        }
+        let r = match *p {
+            "tx" => search_qq_music_paged(keyword, page, page_size),
+            "wy" => search_netease_music_paged(keyword, page, page_size),
+            "kw" => search_kuwo_music_paged(keyword, page, page_size),
+            "kg" => search_kugou_music_paged(keyword, page, page_size),
+            "mg" => search_migu_music_paged(keyword, page, page_size),
+            _ => continue,
+        };
+        match r {
+            Ok(sp) if !sp.songs.is_empty() => return Ok(sp),
+            Ok(_) => last_note = format!("{}:无结果", p),
+            Err(e) => last_note = format!("{}: {}", p, e),
+        }
+    }
+    Err(format!("顺序搜索无有效结果; {}", last_note))
+}
+
+/// 与 lx `store/search/music/action` 中 `sources` 顺序一致：kw, kg, tx, wy, mg
+fn merge_interleave_many(pages: Vec<Vec<SongInfo>>) -> Vec<SongInfo> {
+    let mut out = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut idx: Vec<usize> = vec![0; pages.len()];
+    loop {
+        let mut any_left = false;
+        for i in 0..pages.len() {
+            if idx[i] < pages[i].len() {
+                any_left = true;
+                let song = &pages[i][idx[i]];
+                idx[i] += 1;
+                let k = dedupe_key(song);
+                if seen.insert(k) {
+                    out.push(song.clone());
+                }
+            }
+        }
+        if !any_left {
+            break;
+        }
+    }
+    out
+}
+
+pub fn search_all_paged(keyword: &str, page: u32, page_size: u32) -> Result<SearchPage, String> {
+    let page = if page == 0 { 1 } else { page };
+    let page_size = if page_size == 0 { 10 } else { page_size };
+    let kw = keyword.to_string();
+
+    let (r_kw, r_kg, r_tx, r_wy, r_mg) = std::thread::scope(|s| {
+        let a = kw.clone();
+        let h_kw = s.spawn(move || search_kuwo_music_paged(&a, page, page_size));
+        let b = kw.clone();
+        let h_kg = s.spawn(move || search_kugou_music_paged(&b, page, page_size));
+        let c = kw.clone();
+        let h_tx = s.spawn(move || search_qq_music_paged(&c, page, page_size));
+        let d = kw.clone();
+        let h_wy = s.spawn(move || search_netease_music_paged(&d, page, page_size));
+        let e = kw.clone();
+        let h_mg = s.spawn(move || search_migu_music_paged(&e, page, page_size));
+        let thread_err = || Err("搜索线程异常".to_string());
+        (
+            h_kw.join().unwrap_or_else(|_| thread_err()),
+            h_kg.join().unwrap_or_else(|_| thread_err()),
+            h_tx.join().unwrap_or_else(|_| thread_err()),
+            h_wy.join().unwrap_or_else(|_| thread_err()),
+            h_mg.join().unwrap_or_else(|_| thread_err()),
+        )
+    });
+
+    let mut err_notes: Vec<String> = Vec::new();
+    let p_kw = match r_kw {
+        Ok(p) => p,
+        Err(e) => {
+            err_notes.push(format!("kw: {}", e));
+            empty_search_page(page, page_size)
+        }
+    };
+    let p_kg = match r_kg {
+        Ok(p) => p,
+        Err(e) => {
+            err_notes.push(format!("kg: {}", e));
+            empty_search_page(page, page_size)
+        }
+    };
+    let p_tx = match r_tx {
+        Ok(p) => p,
+        Err(e) => {
+            err_notes.push(format!("tx: {}", e));
+            empty_search_page(page, page_size)
+        }
+    };
+    let p_wy = match r_wy {
+        Ok(p) => p,
+        Err(e) => {
+            err_notes.push(format!("wy: {}", e));
+            empty_search_page(page, page_size)
+        }
+    };
+    let p_mg = match r_mg {
+        Ok(p) => p,
+        Err(e) => {
+            err_notes.push(format!("mg: {}", e));
+            empty_search_page(page, page_size)
+        }
+    };
+
+    if p_kw.songs.is_empty()
+        && p_kg.songs.is_empty()
+        && p_tx.songs.is_empty()
+        && p_wy.songs.is_empty()
+        && p_mg.songs.is_empty()
+    {
+        let mut msg = String::from("聚合搜索无结果");
+        for n in err_notes {
+            msg.push_str("; ");
+            msg.push_str(&n);
+        }
+        return Err(msg);
+    }
+
+    let pages = vec![
+        p_kw.songs,
+        p_kg.songs,
+        p_tx.songs,
+        p_wy.songs,
+        p_mg.songs,
+    ];
+    let songs = merge_interleave_many(pages);
+    let total = p_kw
+        .total
+        .max(p_kg.total)
+        .max(p_tx.total)
+        .max(p_wy.total)
+        .max(p_mg.total);
+
+    Ok(SearchPage {
+        songs,
+        total,
+        page,
+        page_size,
+    })
+}
+
 /// 搜索歌曲 (统一搜索，支持多平台)
 /// 
 /// # 参数
 /// - keyword: 搜索关键词
-/// - platform: 平台 ("tx" 为 QQ 音乐, "wy" 为网易云音乐, "auto" 优先 QQ 再网易云)
+/// - platform: 单源 tx/wy/kw/kg/mg；`auto` 顺序 tx→wy→kw→kg→mg（单次 HTTP 3s、全程≤10s）；`all` 多源并发（单次 HTTP 3s）
 /// 
 /// # 返回
 /// 成功时返回歌曲列表，失败时返回错误信息
@@ -249,21 +754,11 @@ pub fn search_music_paged(keyword: &str, platform: &str, page: u32, page_size: u
     match platform {
         "tx" => search_qq_music_paged(keyword, page, page_size),
         "wy" => search_netease_music_paged(keyword, page, page_size),
-        "auto" => match search_qq_music_paged(keyword, page, page_size) {
-            Ok(ret) if !ret.songs.is_empty() => Ok(ret),
-            Ok(ret) => {
-                eprintln!(
-                    "search auto: QQ 无命中 (keyword={} total={})，改用网易云",
-                    keyword,
-                    ret.total
-                );
-                search_netease_music_paged(keyword, page, page_size)
-            }
-            Err(e) => {
-                eprintln!("search auto: QQ 搜索失败 ({})，改用网易云", e);
-                search_netease_music_paged(keyword, page, page_size)
-            }
-        },
+        "kw" => search_kuwo_music_paged(keyword, page, page_size),
+        "kg" => search_kugou_music_paged(keyword, page, page_size),
+        "mg" => search_migu_music_paged(keyword, page, page_size),
+        "auto" => search_priority_paged(keyword, page, page_size),
+        "all" => search_all_paged(keyword, page, page_size),
         _ => unreachable!("平台验证已通过"),
     }
 }

@@ -73,6 +73,8 @@ music_result_t music_download_with_path(
 char* music_get_extension(const char* quality);
 void music_free_string(char* s);
 
+void music_configure_online(const char* api_url, const char* api_key, const char* user_agent);
+
 int music_api_configured(void);
 
 typedef struct {
