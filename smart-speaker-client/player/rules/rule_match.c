@@ -161,7 +161,7 @@ static int match_switch_online(const char *text)
 
 static int match_play_start(const char *text)
 {
-    static const char *const k[] = {"开始播放", "播放音乐", "播放", "开始", NULL};
+    static const char *const k[] = {"开始播放", "播放音乐", "播放", "开始", "放首歌", NULL};
     static const char *const must_all[] = {"首", "听听", NULL};
     static const char *const deny[] = {"结束", "停止", "暂停", NULL};
     if (has_any(text, deny)) {
