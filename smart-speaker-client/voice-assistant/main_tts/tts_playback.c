@@ -229,6 +229,16 @@ static void* playback_wav_thread(void *arg) {
         free(filename);
         return NULL;
     }
+    if (g_pcm_handle != NULL) {
+        snd_pcm_drop(g_pcm_handle);
+        if (snd_pcm_prepare(g_pcm_handle) < 0) {
+            LOGE(TAG, "准备PCM设备失败");
+            fclose(wav_file);
+            free(filename);
+            return NULL;
+        }
+        pcm_write_silence(g_pcm_handle);
+    }
     uint32_t bytes_per_sample = header.bits_per_sample / 8;
     uint32_t buffer_size_bytes = PLAYBACK_BUFFER_SIZE * bytes_per_sample;
     uint8_t *buffer = (uint8_t *)malloc(buffer_size_bytes);
@@ -376,14 +386,6 @@ void tts_playback_wake_response(void) {
     LOGI(TAG, "播放唤醒响应: %s", wake_files[idx]);
     if (access(wake_files[idx], F_OK) == 0) {
         s_wav_play_is_wake = 1;
-        if (g_pcm_handle != NULL) {
-            snd_pcm_drop(g_pcm_handle);
-            if (snd_pcm_prepare(g_pcm_handle) < 0) {
-                LOGE(TAG, "准备PCM设备失败");
-                return;
-            }
-            pcm_write_silence(g_pcm_handle);
-        }
         pthread_mutex_lock(&playback_mutex);
         playback_should_stop = 0;
         if (playback_wav_filename != NULL) {
@@ -408,14 +410,6 @@ void tts_playback_play_wav_file(const char *path) {
         return;
     }
     LOGI(TAG, "播放WAV文件(同唤醒路径): %s", path);
-    if (g_pcm_handle != NULL) {
-        snd_pcm_drop(g_pcm_handle);
-        if (snd_pcm_prepare(g_pcm_handle) < 0) {
-            LOGE(TAG, "准备PCM设备失败");
-            return;
-        }
-        pcm_write_silence(g_pcm_handle);
-    }
     pthread_mutex_lock(&playback_mutex);
     playback_should_stop = 0;
     if (playback_wav_filename != NULL) {
