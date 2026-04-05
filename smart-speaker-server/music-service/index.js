@@ -17,11 +17,15 @@ function ensureConfigFile() {
   fs.writeFileSync(
     CONFIG_PATH,
     [
-      '# Node 音乐子服务监听配置',
+      '# Node 音乐子服务（server 会同步 resolver_*、music_source_script）',
+      '# 均可省略，括号为 readConfig 默认：',
+      '# host(127.0.0.1) port(9300) provider(lx) default_source(kw)',
+      '# search_sources(同 default_source,CSV) playlist_search_sources(kw,wy,CSV)',
+      '# resolve_quality(320k) music_source_script(相对本目录 ../music-source/lx.js)',
+      '# resolver_* 空则从 lx 脚本 API_URL/API_KEY 读',
       'host = "127.0.0.1"',
       'port = 9300',
       '',
-      '# 当前优先走 LX 风格 provider',
       'provider = "lx"',
       'default_source = "kw"',
       'search_sources = "kw"',
@@ -29,7 +33,6 @@ function ensureConfigFile() {
       'resolve_quality = "320k"',
       'music_source_script = "../music-source/lx.js"',
       '',
-      '# 脚本不可用时可用这里兜底',
       'resolver_api_url = ""',
       'resolver_api_key = ""',
       ''
