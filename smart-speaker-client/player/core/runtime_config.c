@@ -9,6 +9,7 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 typedef struct {
     char server_ip[64];
@@ -21,9 +22,30 @@ typedef struct {
     int loaded;
 } PlayerRuntimeConfig;
 
-static const char *k_client_data_dir = "../data";
-static const char *k_client_config_dir = "../data/config";
-static const char *k_client_config_path = "../data/config/client.toml";
+/* main.c 会 chdir 到含 fifo/ 的客户端根；此时配置应在 ./data。若 CWD 仍在 player/（如从 build/bin 启动），则为 ../data */
+static const char *client_config_path(void)
+{
+    if (access("./fifo/asr_fifo", F_OK) == 0) {
+        return "./data/config/client.toml";
+    }
+    return "../data/config/client.toml";
+}
+
+static const char *client_data_dir(void)
+{
+    if (access("./fifo/asr_fifo", F_OK) == 0) {
+        return "./data";
+    }
+    return "../data";
+}
+
+static const char *client_config_dir(void)
+{
+    if (access("./fifo/asr_fifo", F_OK) == 0) {
+        return "./data/config";
+    }
+    return "../data/config";
+}
 
 static PlayerRuntimeConfig g_runtime_config = {
     .server_ip = SERVER_IP,
@@ -152,13 +174,13 @@ static void write_default_client_config_if_missing(void)
 {
     FILE *fp;
     struct stat st;
-    if (stat(k_client_config_path, &st) == 0) {
+    if (stat(client_config_path(), &st) == 0) {
         return;
     }
-    if (ensure_dir(k_client_data_dir) != 0) return;
-    if (ensure_dir(k_client_config_dir) != 0) return;
+    if (ensure_dir(client_data_dir()) != 0) return;
+    if (ensure_dir(client_config_dir()) != 0) return;
 
-    fp = fopen(k_client_config_path, "w");
+    fp = fopen(client_config_path(), "w");
     if (fp == NULL) {
         return;
     }
@@ -190,7 +212,7 @@ static void load_client_runtime_config(void)
     FILE *fp;
     char line[512];
     write_default_client_config_if_missing();
-    fp = fopen(k_client_config_path, "r");
+    fp = fopen(client_config_path(), "r");
     if (fp == NULL) {
         g_runtime_config.loaded = 1;
         return;
