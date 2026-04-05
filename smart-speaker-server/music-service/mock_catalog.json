@@ -1,0 +1,32 @@
+[
+  {
+    "source": "mock",
+    "id": "song-1",
+    "title": "晴天调试版",
+    "artist": "调试歌手A",
+    "playlist_id": "playlist-1",
+    "playlist_title": "晨间播放列表",
+    "cover": "https://dummyimage.com/512x512/202020/ffffff.png&text=Mock+1",
+    "play_url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+  },
+  {
+    "source": "mock",
+    "id": "song-2",
+    "title": "夜航样例曲",
+    "artist": "调试歌手A",
+    "playlist_id": "playlist-1",
+    "playlist_title": "晨间播放列表",
+    "cover": "https://dummyimage.com/512x512/303030/ffffff.png&text=Mock+2",
+    "play_url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
+  },
+  {
+    "source": "mock",
+    "id": "song-3",
+    "title": "海风联调曲",
+    "artist": "调试歌手B",
+    "playlist_id": "playlist-2",
+    "playlist_title": "海边歌单",
+    "cover": "https://dummyimage.com/512x512/404040/ffffff.png&text=Mock+3",
+    "play_url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
+  }
+]
