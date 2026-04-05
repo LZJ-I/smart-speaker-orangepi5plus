@@ -190,6 +190,7 @@ int main(int argc, char const *argv[])
         LOGI(TAG, "离线模式（环境变量），跳过 TCP 长连");
     } else if (socket_init() != 0) {
         LOGW(TAG, "TCP 长连失败，进入离线模式（挂载 SD 并载入本地曲库）");
+        tts_play_audio_file(SERVER_CONNECT_FAILED_WAV);
         if (player_offline_init_storage_and_library(0) != 0) {
             LOGW(TAG, "离线模式初始化失败，本地曲库可能不可用");
         }
