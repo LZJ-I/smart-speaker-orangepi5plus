@@ -225,6 +225,67 @@ static int strip_music_source_hints_inplace(char *s, char *source, size_t source
     return mask != 0;
 }
 
+static void strip_trailing_sentence_punct(char *s)
+{
+    const char *punct[] = {
+        "。", "！", "？", "，", ".", "!", "?", ",", ";", "；", NULL
+    };
+    int changed = 1;
+    while (changed) {
+        int i = 0;
+        changed = 0;
+        while (punct[i] != NULL) {
+            size_t len = strlen(s);
+            size_t slen = strlen(punct[i]);
+            if (len >= slen && strcmp(s + len - slen, punct[i]) == 0) {
+                s[len - slen] = '\0';
+                trim_text(s);
+                changed = 1;
+                break;
+            }
+            ++i;
+        }
+    }
+}
+
+static int retain_trailing_de_ge_for_playlist(const char *s)
+{
+    const char suf[] = "的歌";
+    size_t len;
+    size_t sul;
+    char pref[192];
+    size_t plen;
+    static const char *const deny[] = {
+        "最爱", "最好", "最新", "最热", "很想", "最想", "好听", "爱听", "随机", "随便", NULL,
+    };
+    int i = 0;
+
+    if (s == NULL) {
+        return 0;
+    }
+    len = strlen(s);
+    sul = strlen(suf);
+    if (len <= sul || strcmp(s + len - sul, suf) != 0) {
+        return 0;
+    }
+    plen = len - sul;
+    if (plen < 3) {
+        return 0;
+    }
+    if (plen >= sizeof(pref)) {
+        return 0;
+    }
+    memcpy(pref, s, plen);
+    pref[plen] = '\0';
+    while (deny[i] != NULL) {
+        if (strcmp(pref, deny[i]) == 0) {
+            return 0;
+        }
+        ++i;
+    }
+    return 1;
+}
+
 static void strip_trailing_particles(char *s)
 {
     const char *suffixes[] = {
@@ -247,6 +308,15 @@ static void strip_trailing_particles(char *s)
             ++i;
         }
     }
+}
+
+static void strip_trailing_particles_music_extract(char *s)
+{
+    strip_trailing_sentence_punct(s);
+    if (retain_trailing_de_ge_for_playlist(s)) {
+        return;
+    }
+    strip_trailing_particles(s);
 }
 
 static void strip_leading_particles(char *s)
@@ -475,7 +545,7 @@ int select_text_extract_music_query_source(const char *text, char *out, size_t o
         snprintf(out, out_size, "%s", p);
         trim_text(out);
         strip_leading_particles(out);
-        strip_trailing_particles(out);
+        strip_trailing_particles_music_extract(out);
         if (strlen(out) >= 1) {
             return 1;
         }
@@ -487,7 +557,7 @@ int select_text_extract_music_query_source(const char *text, char *out, size_t o
         snprintf(out, out_size, "%s", normalized);
         trim_text(out);
         strip_leading_particles(out);
-        strip_trailing_particles(out);
+        strip_trailing_particles_music_extract(out);
         if (strlen(out) >= 2) {
             return 1;
         }
