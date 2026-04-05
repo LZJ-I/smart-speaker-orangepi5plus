@@ -3,6 +3,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -13,9 +15,14 @@
 
 #define TAG "MUSIC-ASYNC"
 
+typedef struct MasJob {
+    char q[256];
+    uint32_t token;
+} MasJob;
+
 static int g_mas_pipe[2] = {-1, -1};
 static pthread_mutex_t g_mas_mu = PTHREAD_MUTEX_INITIALIZER;
-static volatile sig_atomic_t g_mas_busy;
+static uint32_t g_latest_token;
 
 static char g_query[256];
 static music_async_out_t g_pending_out;
@@ -31,28 +38,56 @@ static void mas_notify_write(void)
     } while (w < 0 && errno == EINTR);
 }
 
+static void mas_publish_or_drop(uint32_t job_tok, music_async_out_t out, const MusicSourceItem *it, MusicSourceResult *sr,
+                                const char *q_for_display)
+{
+    pthread_mutex_lock(&g_mas_mu);
+    if (job_tok != g_latest_token) {
+        if (out == MUSIC_ASYNC_OK_SEARCH && sr != NULL && sr->items != NULL) {
+            music_source_free_result(sr);
+            memset(sr, 0, sizeof(*sr));
+        }
+        pthread_mutex_unlock(&g_mas_mu);
+        return;
+    }
+    g_pending_out = out;
+    memset(&g_pending_item, 0, sizeof(g_pending_item));
+    memset(&g_pending_search, 0, sizeof(g_pending_search));
+    if (q_for_display != NULL) {
+        snprintf(g_query, sizeof(g_query), "%s", q_for_display);
+    }
+    if (out == MUSIC_ASYNC_OK_RESOLVE && it != NULL) {
+        g_pending_item = *it;
+    } else if (out == MUSIC_ASYNC_OK_SEARCH && sr != NULL) {
+        g_pending_search = *sr;
+        memset(sr, 0, sizeof(*sr));
+    }
+    pthread_mutex_unlock(&g_mas_mu);
+    mas_notify_write();
+}
+
 static void *mas_play_query_thread(void *arg)
 {
+    MasJob *job = (MasJob *)arg;
     char q[256];
+    uint32_t tok;
     MusicSourceItem it;
     MusicSourceResult sr;
     player_playlist_ctx_t pl;
-    (void)arg;
+
+    if (job == NULL) {
+        return NULL;
+    }
+    snprintf(q, sizeof(q), "%s", job->q);
+    tok = job->token;
+    free(job);
+    job = NULL;
 
     memset(&it, 0, sizeof(it));
     memset(&sr, 0, sizeof(sr));
 
-    pthread_mutex_lock(&g_mas_mu);
-    snprintf(q, sizeof(q), "%s", g_query);
-    pthread_mutex_unlock(&g_mas_mu);
-
     if (g_current_online_mode == ONLINE_MODE_YES && music_source_server_resolve_keyword(q, &it) == 0) {
-        pthread_mutex_lock(&g_mas_mu);
-        g_pending_out = MUSIC_ASYNC_OK_RESOLVE;
-        g_pending_item = it;
-        memset(&g_pending_search, 0, sizeof(g_pending_search));
-        pthread_mutex_unlock(&g_mas_mu);
-        mas_notify_write();
+        mas_publish_or_drop(tok, MUSIC_ASYNC_OK_RESOLVE, &it, NULL, q);
         return NULL;
     }
 
@@ -62,22 +97,12 @@ static void *mas_play_query_thread(void *arg)
             music_source_set_online_search_blocked(1);
         }
         music_source_free_result(&sr);
-        pthread_mutex_lock(&g_mas_mu);
-        g_pending_out = MUSIC_ASYNC_FAIL;
-        memset(&g_pending_item, 0, sizeof(g_pending_item));
-        memset(&g_pending_search, 0, sizeof(g_pending_search));
-        pthread_mutex_unlock(&g_mas_mu);
-        mas_notify_write();
+        memset(&sr, 0, sizeof(sr));
+        mas_publish_or_drop(tok, MUSIC_ASYNC_FAIL, NULL, NULL, q);
         return NULL;
     }
 
-    pthread_mutex_lock(&g_mas_mu);
-    g_pending_out = MUSIC_ASYNC_OK_SEARCH;
-    memset(&g_pending_item, 0, sizeof(g_pending_item));
-    g_pending_search = sr;
-    memset(&sr, 0, sizeof(sr));
-    pthread_mutex_unlock(&g_mas_mu);
-    mas_notify_write();
+    mas_publish_or_drop(tok, MUSIC_ASYNC_OK_SEARCH, NULL, &sr, q);
     return NULL;
 }
 
@@ -133,8 +158,6 @@ void music_server_async_on_readable(void)
     memset(&g_pending_search, 0, sizeof(g_pending_search));
     pthread_mutex_unlock(&g_mas_mu);
 
-    g_mas_busy = 0;
-
     if (out == MUSIC_ASYNC_OK_RESOLVE) {
         select_music_async_play_query_done(out, &it, NULL, q);
     } else if (out == MUSIC_ASYNC_OK_SEARCH) {
@@ -149,27 +172,29 @@ int music_server_async_start_play_query(const char *query)
     pthread_t th;
     pthread_attr_t attr;
     int r;
+    MasJob *job;
     if (query == NULL || query[0] == '\0') {
         return -1;
     }
     if (g_mas_pipe[0] < 0) {
         return -1;
     }
-    if (g_mas_busy) {
-        LOGW(TAG, "上一笔搜歌请求未完成，忽略");
+    job = (MasJob *)malloc(sizeof(*job));
+    if (job == NULL) {
         return -1;
     }
-    g_mas_busy = 1;
     pthread_mutex_lock(&g_mas_mu);
-    snprintf(g_query, sizeof(g_query), "%s", query);
+    g_latest_token++;
+    job->token = g_latest_token;
+    snprintf(job->q, sizeof(job->q), "%s", query);
     pthread_mutex_unlock(&g_mas_mu);
 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    r = pthread_create(&th, &attr, mas_play_query_thread, NULL);
+    r = pthread_create(&th, &attr, mas_play_query_thread, job);
     pthread_attr_destroy(&attr);
     if (r != 0) {
-        g_mas_busy = 0;
+        free(job);
         LOGE(TAG, "pthread_create: %s", strerror(r));
         return -1;
     }
