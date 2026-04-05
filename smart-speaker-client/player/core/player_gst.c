@@ -104,6 +104,67 @@ static void disable_proxy_for_playback(void)
     setenv("NO_PROXY", "127.0.0.1,localhost", 1);
 }
 
+#define GST_HTTP_USER_AGENT \
+    "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+static void try_apply_http_source_headers(GstElement *element, const char *uri)
+{
+    GObjectClass *klass;
+
+    if (element == NULL) {
+        return;
+    }
+    klass = G_OBJECT_GET_CLASS(element);
+    if (g_object_class_find_property(klass, "user-agent")) {
+        g_object_set(element, "user-agent", GST_HTTP_USER_AGENT, NULL);
+        LOGI(TAG, "HTTP 源已设 User-Agent (%s)", GST_OBJECT_NAME(element));
+    }
+    if (uri != NULL && uri[0] != '\0' &&
+        (strstr(uri, "126.net") != NULL || strstr(uri, "music.163.com") != NULL || strstr(uri, "netease") != NULL)) {
+        if (g_object_class_find_property(klass, "referer")) {
+            g_object_set(element, "referer", "https://music.163.com/", NULL);
+            LOGI(TAG, "HTTP 源已设 Referer (%s)", GST_OBJECT_NAME(element));
+        }
+    }
+}
+
+static void apply_http_headers_recursive(GstElement *element, const char *uri)
+{
+    GValue item = G_VALUE_INIT;
+    GstIterator *it;
+
+    if (element == NULL) {
+        return;
+    }
+    try_apply_http_source_headers(element, uri);
+    if (!GST_IS_BIN(element)) {
+        return;
+    }
+    it = gst_bin_iterate_recurse(GST_BIN(element));
+    if (it == NULL) {
+        return;
+    }
+    while (gst_iterator_next(it, &item) == GST_ITERATOR_OK) {
+        GstElement *child = GST_ELEMENT(g_value_get_object(&item));
+        try_apply_http_source_headers(child, uri);
+        g_value_unset(&item);
+    }
+    gst_iterator_free(it);
+}
+
+static void on_playbin_source_setup(GstElement *playbin, GstElement *source, gpointer user_data)
+{
+    gchar *uri = NULL;
+
+    (void)user_data;
+    if (playbin == NULL || source == NULL) {
+        return;
+    }
+    g_object_get(playbin, "uri", &uri, NULL);
+    apply_http_headers_recursive(source, uri != NULL ? uri : "");
+    g_free(uri);
+}
+
 static GstBusSyncReply bus_sync(GstBus *bus, GstMessage *msg, gpointer data)
 {
     GstPlayerData *d = (GstPlayerData *)data;
@@ -210,6 +271,7 @@ int run_gst_player(const char *initial_uri)
         g_object_set(data.playbin, "audio-sink", asink, NULL);
     if (vsink)
         g_object_set(data.playbin, "video-sink", vsink, NULL);
+    g_signal_connect(data.playbin, "source-setup", G_CALLBACK(on_playbin_source_setup), NULL);
     g_object_set(data.playbin, "uri", initial_uri, NULL);
     GstBus *bus = gst_element_get_bus(data.playbin);
     gst_bus_set_sync_handler(bus, bus_sync, &data, NULL);
