@@ -50,6 +50,8 @@ static volatile sig_atomic_t g_eof_autostart_suppressed = 0;
 static int g_gst_cmd_fifo_fd = -1;
 static int player_write_fifo(const char *cmd);
 static void asr_kws_switch_offline_mode(void);
+static void player_commit_offline_runtime_state(void);
+static void player_sync_shm_to_first_playable_local_song(void);
 
 void player_set_audio_focus(int focus_state)
 {
@@ -953,6 +955,27 @@ int player_play_url(const char *url)
     return 0;
 }
 
+static void player_commit_offline_runtime_state(void)
+{
+    asr_kws_switch_offline_mode();
+    g_current_online_mode = ONLINE_MODE_NO;
+    g_current_state = PLAY_STATE_STOP;
+    g_current_suspend = PLAY_SUSPEND_YES;
+    player_set_audio_focus(AUDIO_FOCUS_IDLE);
+}
+
+static void player_sync_shm_to_first_playable_local_song(void)
+{
+    Music_Node first_song;
+    Shm_Data s;
+
+    if (link_get_first_music(&first_song) == 0) {
+        shm_get(&s);
+        update_shm_current_song(&s, &first_song);
+        shm_set(&s);
+    }
+}
+
 static void asr_kws_switch_offline_mode(void)
 {
     int fd = open(ASR_CTRL_PIPE_PATH, O_WRONLY | O_NONBLOCK);
@@ -1052,9 +1075,6 @@ static void player_unmount_sdcard_if_mounted(void)
 
 int player_offline_init_storage_and_library(int reset_player)
 {
-    Music_Node first_song;
-    Shm_Data s;
-
     if (reset_player) {
         player_stop_play();
         player_write_fifo("quit\n");
@@ -1063,32 +1083,16 @@ int player_offline_init_storage_and_library(int reset_player)
     if (player_ensure_sdcard_mounted() != 0) {
         LOGW(TAG, "离线初始化：未挂载存储或无可挂载设备");
         link_clear_list();
-        asr_kws_switch_offline_mode();
-        g_current_online_mode = ONLINE_MODE_NO;
-        g_current_state = PLAY_STATE_STOP;
-        g_current_suspend = PLAY_SUSPEND_YES;
-        player_set_audio_focus(AUDIO_FOCUS_IDLE);
+        player_commit_offline_runtime_state();
         return -1;
     }
     if (music_lib_load_all_local_to_link() != 0) {
         LOGW(TAG, "离线初始化：载入本地曲库失败");
-        asr_kws_switch_offline_mode();
-        g_current_online_mode = ONLINE_MODE_NO;
-        g_current_state = PLAY_STATE_STOP;
-        g_current_suspend = PLAY_SUSPEND_YES;
-        player_set_audio_focus(AUDIO_FOCUS_IDLE);
+        player_commit_offline_runtime_state();
         return -1;
     }
-    if (link_get_first_music(&first_song) == 0) {
-        shm_get(&s);
-        update_shm_current_song(&s, &first_song);
-        shm_set(&s);
-    }
-    asr_kws_switch_offline_mode();
-    g_current_online_mode = ONLINE_MODE_NO;
-    g_current_state = PLAY_STATE_STOP;
-    g_current_suspend = PLAY_SUSPEND_YES;
-    player_set_audio_focus(AUDIO_FOCUS_IDLE);
+    player_sync_shm_to_first_playable_local_song();
+    player_commit_offline_runtime_state();
     LOGI(TAG, "离线模式初始化完成（存储与曲库）");
     return 0;
 }
@@ -1111,8 +1115,6 @@ int player_env_forces_offline(void)
 
 int player_switch_offline_mode(void)
 {
-    Music_Node first_song;
-    Shm_Data s;
     if (g_current_online_mode == ONLINE_MODE_NO) {
         tts_play_text("当前为离线模式，无需切换");
         return 0;
@@ -1120,8 +1122,6 @@ int player_switch_offline_mode(void)
     g_eof_autostart_suppressed = 1;
     player_stop_play();
     force_stop_playback_processes();
-    socket_close_connection();
-    sync();
     if (player_ensure_sdcard_mounted() != 0) {
         tts_play_text("请先插入存储设备");
         return 1;
@@ -1130,16 +1130,10 @@ int player_switch_offline_mode(void)
         tts_play_text("切换离线模式失败，无法读取存储设备歌曲");
         return -1;
     }
-    if (link_get_first_music(&first_song) == 0) {
-        shm_get(&s);
-        update_shm_current_song(&s, &first_song);
-        shm_set(&s);
-    }
-    asr_kws_switch_offline_mode();
-    g_current_online_mode = ONLINE_MODE_NO;
-    g_current_state = PLAY_STATE_STOP;
-    g_current_suspend = PLAY_SUSPEND_YES;
-    player_set_audio_focus(AUDIO_FOCUS_IDLE);
+    player_sync_shm_to_first_playable_local_song();
+    socket_close_connection();
+    sync();
+    player_commit_offline_runtime_state();
     tts_play_text("已切换到离线模式");
     return 0;
 }
