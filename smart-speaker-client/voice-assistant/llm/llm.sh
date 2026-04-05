@@ -4,6 +4,10 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/llm_config.sh"
 
+LLM_LOG_DIR="$SCRIPT_DIR/../../data/llm"
+mkdir -p "$LLM_LOG_DIR"
+exec 3>>"$LLM_LOG_DIR/curl.log"
+
 # -$# -eq 0 : 如果没有参数
 if [ $# -eq 0 ]; then
     echo "请加上你的问题"
@@ -14,7 +18,9 @@ fi
 user_message=$1
 
 # 执行脚本 ： 向qwen-plus模型发送请求
-curl -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
+{
+    echo "---- $(date -Iseconds) ----"
+    curl -sS -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
 -H "Authorization: Bearer $LLM_API_KEY" \
 -H "Content-Type: application/json" \
 -d '{
@@ -30,3 +36,5 @@ curl -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions 
         }
     ]
 }'
+    echo ""
+} | tee /dev/fd/3

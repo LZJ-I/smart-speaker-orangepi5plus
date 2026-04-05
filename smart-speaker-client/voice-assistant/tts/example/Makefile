@@ -3,15 +3,17 @@ CC = gcc
 TARGETS = tts_test play_wav
 TTS_SRCS = tts_test.c \
            ../sherpa_tts.c \
-           ../alsa_output.c
+           ../alsa_output.c \
+           ../../../debug_log.c
 WAV_SRCS = play_wav.c \
-           ../alsa_output.c
+           ../alsa_output.c \
+           ../../../debug_log.c
 
 TTS_OBJS = $(TTS_SRCS:.c=.o)
 WAV_OBJS = $(WAV_SRCS:.c=.o)
 
-CFLAGS = -Wall -g -DKWS_TEST_MODE -I../../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -I../../common -I.. -I.
-LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L../../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib
+CFLAGS = -Wall -g -DKWS_TEST_MODE -I../../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -I../../common -I.. -I. -I../../..
+LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L../../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib -pthread
 
 all: $(TARGETS)
 

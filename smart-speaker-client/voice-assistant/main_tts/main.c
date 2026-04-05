@@ -75,6 +75,7 @@ int open_pipes(void) {
 }
 
 int main(int argc, char const *argv[]) {
+    app_log_init("tts");
     LOGI(TAG, "=== TTS进程启动 ===");
     unsetenv("DISPLAY");
 

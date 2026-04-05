@@ -16,3 +16,6 @@ player/run
 
 # fetched / generated deps (see also 3rdparty/model/.gitignore)
 .cursor
+
+# 进程运行时日志（app_log_init）
+data/

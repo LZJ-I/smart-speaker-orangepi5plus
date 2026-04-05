@@ -102,6 +102,8 @@ int main(int argc, char const *argv[])
         chdir("../..");
     }
 
+    app_log_init("player");
+
     /* SA_RESTART 默认会重启阻塞的 select，导致 EOF 后无法及时处理 g_playlist_eof_flag */
     install_no_restart_handler(SIGUSR1, player_handle_playlist_eof);
     install_no_restart_handler(SIGCHLD, player_handle_sigchld);

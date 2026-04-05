@@ -169,6 +169,7 @@ static void online_handler(int s) {
 }
 
 int main(int argc, char const *argv[]) {
+    app_log_init("kws-asr");
     LOGI(TAG, "=== ASR+KWS进程启动 ===");
 
     if (signal(SIGINT, sigint_handler) == SIG_ERR) {

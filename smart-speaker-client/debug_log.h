@@ -4,6 +4,17 @@
 #include <stdio.h>
 #include <time.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void app_log_init(const char *subdir);
+void debug_log_emit(int level, const char *tag, const char *fmt, ...);
+
+#ifdef __cplusplus
+}
+#endif
+
 #define LOG_COLOR_NONE   "\033[0m"
 #define LOG_COLOR_RED    "\033[31m"
 #define LOG_COLOR_YELLOW "\033[33m"
@@ -46,14 +57,9 @@ static inline const char* get_log_color(int level) {
 #define LOG_IMPL(level, tag, fmt, ...) \
     do { \
         if (level <= LOG_LEVEL) { \
-            time_t now = time(NULL); \
-            struct tm* tm_info = localtime(&now); \
-            fprintf(stderr, "%s(%s) %s [%02d:%02d:%02d] " fmt "%s\n", \
-                    get_log_color(level), get_log_prefix(level), tag, \
-                    tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec, \
-                    ##__VA_ARGS__, LOG_COLOR_NONE); \
+            debug_log_emit(level, tag, fmt, ##__VA_ARGS__); \
         } \
-    } while(0)
+    } while (0)
 
 #define LOGE(tag, fmt, ...) LOG_IMPL(LOG_LEVEL_ERROR, tag, fmt, ##__VA_ARGS__)
 #define LOGW(tag, fmt, ...) LOG_IMPL(LOG_LEVEL_WARN, tag, fmt, ##__VA_ARGS__)

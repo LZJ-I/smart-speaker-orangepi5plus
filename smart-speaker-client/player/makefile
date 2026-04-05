@@ -29,7 +29,8 @@ OBJS = \
 	music_source/music_source_server.o \
 	music_source/music_source_manager.o \
 	../ipc/ipc_message.o \
-	../voice-assistant/llm/llm.o
+	../voice-assistant/llm/llm.o \
+	../debug_log.o
 LIBS = -lpthread -ljson-c -lasound -lm $(shell pkg-config --libs gstreamer-1.0 2>/dev/null)
 
 TARGET = run
@@ -58,5 +59,8 @@ $(TARGET): $(OBJS)
 ../voice-assistant/llm/llm.o: ../voice-assistant/llm/llm.c
 	$(CC) $(CFLAGS) -c ../voice-assistant/llm/llm.c -o ../voice-assistant/llm/llm.o
 
+../debug_log.o: ../debug_log.c
+	$(CC) $(CFLAGS) -c ../debug_log.c -o ../debug_log.o
+
 clean:
-	rm -f $(TARGET) $(OBJS) testServer test_online_music_chain
+	rm -f $(TARGET) $(OBJS) ../debug_log.o testServer test_online_music_chain
