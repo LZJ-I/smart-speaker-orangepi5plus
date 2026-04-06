@@ -39,6 +39,7 @@ void sigint_handler(int signum) {
 void sigusr1_handler(int signum) {
     LOGI(TAG, "收到SIGUSR1信号，停止当前播放");
     tts_playback_stop();
+    tts_playback_join();
 }
 
 int open_pipes(void) {

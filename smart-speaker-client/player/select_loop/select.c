@@ -393,8 +393,12 @@ static void select_read_asr(void)
         player_switch_online_mode();
         break;
     case RULE_CMD_NOOP:
+        /* 播完 noop 后靠 tts:done 恢复；清 followup 否则 done 分支不 continue */
+        player_voice_cmd_clear_followup();
         tts_play_noop_reply_random();
-        resume_after_handle = had_music_before_wakeup;
+        if (had_music_before_wakeup) {
+            player_audio_focus_prepare_resume();
+        }
         break;
     case RULE_CMD_NONE:
     default:

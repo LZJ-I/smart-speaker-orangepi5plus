@@ -39,18 +39,31 @@ uint32_t g_tts_seq = 0;
 int current_state = STATE_KWS;
 enum OnlineMode g_current_online_mode = ONLINE_MODE_YES;
 
-static void wait_for_tts_wake_done(void)
+/* 须在发 PLAY_WAKE_RESPONSE 之前打开读端，否则 TTS 侧 O_WRONLY|O_NONBLOCK 会因无读端而 ENXIO，无法写入完成信号 */
+static int tts_wake_done_open_and_drain(void)
 {
     int rfd = open(TTS_WAKE_DONE_FIFO_PATH, O_RDONLY | O_NONBLOCK);
+    char drain[64];
+    ssize_t n;
+
+    if (rfd < 0) {
+        LOGW(TAG, "打开tts唤醒完成管道失败: %s", strerror(errno));
+        return -1;
+    }
+    while ((n = read(rfd, drain, sizeof(drain))) > 0) {
+    }
+    return rfd;
+}
+
+static void tts_wake_done_wait_close(int rfd)
+{
     struct pollfd pfd;
     char b = 0;
     int pr;
 
     if (rfd < 0) {
-        LOGW(TAG, "打开tts唤醒完成管道失败: %s", strerror(errno));
         return;
     }
-
     pfd.fd = rfd;
     pfd.events = POLLIN;
     pfd.revents = 0;
@@ -66,7 +79,6 @@ static void wait_for_tts_wake_done(void)
     } else {
         LOGW(TAG, "tts唤醒完成管道异常关闭，继续进入ASR模式");
     }
-
     close(rfd);
 }
 
@@ -275,10 +287,13 @@ int main(int argc, char const *argv[]) {
                 if (!is_wake)
                     continue;
                 LOGI(TAG, "检测到唤醒词: %s", keyword);
-                asr_kws_pipe_write_text(&kws_fd, KWS_FIFO_PATH, keyword);
-                send_tts_command(IPC_CMD_STOP_PLAYING, NULL, NULL);
-                send_tts_command(IPC_CMD_PLAY_WAKE_RESPONSE, NULL, NULL);
-                wait_for_tts_wake_done();
+                {
+                    int wake_done_rfd = tts_wake_done_open_and_drain();
+                    asr_kws_pipe_write_text(&kws_fd, KWS_FIFO_PATH, keyword);
+                    send_tts_command(IPC_CMD_STOP_PLAYING, NULL, NULL);
+                    send_tts_command(IPC_CMD_PLAY_WAKE_RESPONSE, NULL, NULL);
+                    tts_wake_done_wait_close(wake_done_rfd);
+                }
                 clock_gettime(CLOCK_MONOTONIC, &g_last_asr_update_time);
                 memset(g_last_asr_text, 0, sizeof(g_last_asr_text));
                 g_asr_result_updated = 0;

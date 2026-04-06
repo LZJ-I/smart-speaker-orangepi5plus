@@ -77,15 +77,19 @@ void handle_ipc_message(uint16_t type, const uint8_t *body, uint32_t body_len) {
             LOGI(TAG, "收到播放唤醒响应命令");
             tts_playback_stop();
             tts_playback_notify_player("tts:start");
+            /* 在 wake_response 内 join 旧播放线程之前写 fifo，避免 ASR 在 poll 上与 dmix 争用同卡死 */
+            int wfd = open(TTS_WAKE_DONE_FIFO_PATH, O_WRONLY | O_NONBLOCK);
+            if (wfd >= 0) {
+                if (write(wfd, "1", 1) != 1) {
+                    LOGW(TAG, "写入tts唤醒完成信号失败: %s", strerror(errno));
+                }
+                close(wfd);
+            } else {
+                LOGW(TAG, "打开tts唤醒完成管道写端失败: %s", strerror(errno));
+            }
             tts_playback_wake_response();
             if (!tts_playback_is_playing()) {
                 tts_playback_notify_player("tts:done");
-            }
-            tts_playback_join();
-            int wfd = open(TTS_WAKE_DONE_FIFO_PATH, O_WRONLY | O_NONBLOCK);
-            if (wfd >= 0) {
-                write(wfd, "1", 1);
-                close(wfd);
             }
             break;
         }

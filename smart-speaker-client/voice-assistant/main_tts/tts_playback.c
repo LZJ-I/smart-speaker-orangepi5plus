@@ -11,6 +11,7 @@
 #include "../common/ipc_protocol.h"
 #include "../tts/alsa_output.h"
 #include "../tts/sherpa_tts.h"
+#include "tts_playback.h"
 
 #define TAG "TTS_MAIN"
 #define PLAYBACK_BUFFER_SIZE (16 * 1024)
@@ -345,13 +346,10 @@ void tts_playback_stop(void) {
     if (g_pcm_handle != NULL) {
         snd_pcm_drop(g_pcm_handle);
     }
-    if (playback_thread != 0) {
-        pthread_join(playback_thread, NULL);
-        playback_thread = 0;
-    }
 }
 
 int tts_playback_request_text(const char *text) {
+    tts_playback_join();
     s_tts_content_session = 1;
     float *samples = NULL;
     int32_t n = 0;
