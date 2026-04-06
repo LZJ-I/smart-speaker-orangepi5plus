@@ -41,12 +41,16 @@ private:
     void switchToTab(int index);
 
 private:
+    int m_playlistPage;
+    int m_playlistTotalPages;
+
     void clearMusicItemBold();
     void setMusicItemSelectedAndBold(int index);
     int getCurrentSelectedMusicIndex();
     int getMusicListCount();
     void syncCurrentTrackSelection(int currentIndex = -1);
     void updatePlaylistPageLabelFromJson(const QJsonObject &root);
+    void refreshPageIndicator();
 
 private slots:
     void server_reply_slot(void);

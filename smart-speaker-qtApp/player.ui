@@ -206,14 +206,17 @@
          <item>
           <widget class="QPushButton" name="playlist_page_prev_button">
            <property name="text">
-            <string>上一页</string>
+            <string>◀</string>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QLabel" name="playlist_page_label">
            <property name="text">
-            <string>页 1/1</string>
+            <string/>
+           </property>
+           <property name="textFormat">
+            <enum>Qt::RichText</enum>
            </property>
            <property name="alignment">
             <set>Qt::AlignCenter</set>
@@ -223,7 +226,7 @@
          <item>
           <widget class="QPushButton" name="playlist_page_next_button">
            <property name="text">
-            <string>下一页</string>
+            <string>▶</string>
            </property>
           </widget>
          </item>

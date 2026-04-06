@@ -86,6 +86,8 @@ Player::Player(Socket *socket, QString appid, QString deviceid, QWidget *parent)
     m_get_music_flag = true;
     m_lastPlaylistRequestMs = 0;
     m_playlistVersion = -1;
+    m_playlistPage = 1;
+    m_playlistTotalPages = 1;
 
     applyStyleSheet();
 
@@ -122,7 +124,7 @@ void Player::applyStyleSheet()
         "  background-color: #161b22; border-radius: 10px; padding: 8px;"
         "}"
         "QLabel#vol_label { font-size: 18px; color: #e6edf3; }"
-        "QLabel#playlist_page_label { color: #8b949e; font-size: 13px; }"
+        "QLabel#playlist_page_label { color: #8b949e; font-size: 14px; letter-spacing: 2px; }"
 
         "QLineEdit#search_keyword_edit {"
         "  background-color: #161b22; color: #e6edf3;"
@@ -178,6 +180,13 @@ void Player::applyStyleSheet()
         "}"
         "QPushButton#play_button:hover { background-color: #79c0ff; }"
         "QPushButton#prev_button, QPushButton#next_button { font-size: 20px; }"
+        "QPushButton#playlist_page_prev_button, QPushButton#playlist_page_next_button {"
+        "  min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px;"
+        "  border-radius: 18px; padding: 0; font-size: 16px;"
+        "}"
+        "QPushButton#playlist_page_prev_button:disabled, QPushButton#playlist_page_next_button:disabled {"
+        "  color: #30363d; border-color: #21262d; background-color: #161b22;"
+        "}"
         "QPushButton#volsub_button, QPushButton#voladd_button { font-size: 14px; font-weight: bold; }"
 
         "QRadioButton { color: #c9d1d9; font-size: 14px; spacing: 8px; }"
@@ -277,8 +286,13 @@ void Player::player_app_reply_option_handler(QJsonObject& root)
         ui->order_radioButton->setChecked(true);
     } else if (cmd == "reply_app_single_mode") {
         ui->single_radioButton->setChecked(true);
-    } else if (cmd == "reply_app_play_assign_song" || cmd == "reply_app_play_playlist") {
+    } else if (cmd == "reply_app_play_assign_song" || cmd == "reply_app_play_playlist" ||
+               cmd == "reply_app_insert_play_song") {
         ui->play_button->setText("||");
+        if (cmd == "reply_app_play_playlist" && result == "success") {
+            switchToTab(0);
+            player_get_music_list();
+        }
     } else if (cmd == "reply_app_playlist_next_page" || cmd == "reply_app_playlist_prev_page") {
         if (result == "success") player_get_music_list();
     }
@@ -374,8 +388,41 @@ void Player::updatePlaylistPageLabelFromJson(const QJsonObject &root)
 {
     const int plPage = root[QStringLiteral("playlist_page")].toInt(0);
     const int plTotal = root[QStringLiteral("playlist_total_pages")].toInt(0);
-    if (plPage > 0 && plTotal > 0)
-        ui->playlist_page_label->setText(QStringLiteral("页 %1/%2").arg(plPage).arg(plTotal));
+    if (plPage > 0 && plTotal > 0) {
+        m_playlistPage = plPage;
+        m_playlistTotalPages = plTotal;
+        refreshPageIndicator();
+    }
+}
+
+void Player::refreshPageIndicator()
+{
+    if (m_playlistTotalPages <= 1) {
+        ui->playlist_page_label->setText(QString());
+        ui->playlist_page_prev_button->setEnabled(false);
+        ui->playlist_page_next_button->setEnabled(false);
+        return;
+    }
+    ui->playlist_page_prev_button->setEnabled(true);
+    ui->playlist_page_next_button->setEnabled(true);
+
+    const int total = m_playlistTotalPages;
+    const int cur = m_playlistPage;
+    const int maxDots = 7;
+
+    if (total <= maxDots) {
+        QString dots;
+        for (int i = 1; i <= total; ++i) {
+            if (!dots.isEmpty()) dots += QStringLiteral("  ");
+            dots += (i == cur) ? QStringLiteral("●") : QStringLiteral("○");
+        }
+        ui->playlist_page_label->setText(dots);
+    } else {
+        ui->playlist_page_label->setText(
+            QStringLiteral("<span style='color:#58a6ff;font-weight:bold;'>%1</span>"
+                           "<span style='color:#484f58;'> / %2</span>")
+                .arg(cur).arg(total));
+    }
 }
 
 void Player::on_play_button_clicked()
@@ -460,7 +507,20 @@ void Player::on_search_result_listWidget_doubleClicked(const QModelIndex &index)
 {
     QListWidgetItem *item = ui->search_result_listWidget->item(index.row());
     if (!item) return;
-    sendPlayFromItem(m_socket, m_appid, m_deviceid, item);
+    QString itemKind = item->data(MusicKindRole).toString();
+    if (itemKind == QStringLiteral("playlist")) {
+        sendPlayFromItem(m_socket, m_appid, m_deviceid, item);
+    } else {
+        QJsonObject root;
+        root["cmd"] = QStringLiteral("app_insert_play_song");
+        root["appid"] = m_appid;
+        root["deviceid"] = m_deviceid;
+        root["title"] = item->data(MusicTitleRole).toString();
+        root["subtitle"] = item->data(MusicSubtitleRole).toString();
+        root["source"] = item->data(MusicSourceRole).toString();
+        root["id"] = item->data(MusicIdRole).toString();
+        m_socket->WriteData(root);
+    }
 }
 
 void Player::on_song_search_button_clicked()
