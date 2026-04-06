@@ -20,6 +20,8 @@ typedef struct {
     char gst_alsa_device[128];
     char music_search_source[16];
     char device_id[64];
+    int music_link_debug;
+    char music_link_debug_path[512];
     int loaded;
 } PlayerRuntimeConfig;
 
@@ -55,8 +57,10 @@ static PlayerRuntimeConfig g_runtime_config = {
     .startup_volume = DEFAULT_VOLUME,
     .player_mode = "auto",
     .gst_alsa_device = GST_ALSA_DEVICE,
-    .music_search_source = "auto",
+    .music_search_source = "all",
     .device_id = DEFAULT_DEVICE_ID,
+    .music_link_debug = 0,
+    .music_link_debug_path = "data/player/music_link_debug.txt",
     .loaded = 0,
 };
 
@@ -97,6 +101,22 @@ static void unquote_text(char *text)
         memmove(text, text + 1, len - 2);
         text[len - 2] = '\0';
     }
+}
+
+static int parse_bool_loose(const char *text, int *out_value)
+{
+    if (text == NULL || out_value == NULL) {
+        return -1;
+    }
+    if (strcasecmp(text, "true") == 0 || strcmp(text, "1") == 0 || strcasecmp(text, "yes") == 0) {
+        *out_value = 1;
+        return 0;
+    }
+    if (strcasecmp(text, "false") == 0 || strcmp(text, "0") == 0 || strcasecmp(text, "no") == 0) {
+        *out_value = 0;
+        return 0;
+    }
+    return -1;
 }
 
 static int parse_int_in_range(const char *text, int min_value, int max_value, int *out_value)
@@ -206,7 +226,11 @@ static void write_default_client_config_if_missing(void)
             "\n"
             "# 在线搜歌/歌单默认 source（语音未指定平台时）；可选：\n"
             "# tx/wy/kw/kg/mg 单源；auto 顺序（单次 HTTP 3s、全程≤10s）；all 并发（单次 HTTP 3s）\n"
-            "music_search_source = \"auto\"\n",
+            "music_search_source = \"all\"\n"
+            "\n"
+            "# 歌单链表调试：true 时写入 music_link_debug_path\n"
+            "music_link_debug = false\n"
+            "music_link_debug_path = \"data/player/music_link_debug.txt\"\n",
             SERVER_IP, SERVER_PORT, DEFAULT_DEVICE_ID, SDCARD_MOUNT_PATH,
             DEFAULT_VOLUME, "auto", GST_ALSA_DEVICE);
     fclose(fp);
@@ -283,7 +307,18 @@ static void load_client_runtime_config(void)
             unquote_text(value);
             if (music_search_source_apply(value, g_runtime_config.music_search_source,
                                           sizeof(g_runtime_config.music_search_source)) != 0) {
-                copy_text(g_runtime_config.music_search_source, sizeof(g_runtime_config.music_search_source), "auto");
+                copy_text(g_runtime_config.music_search_source, sizeof(g_runtime_config.music_search_source), "all");
+            }
+        } else if (strcmp(key, "music_link_debug") == 0) {
+            int b;
+            unquote_text(value);
+            if (parse_bool_loose(value, &b) == 0) {
+                g_runtime_config.music_link_debug = b;
+            }
+        } else if (strcmp(key, "music_link_debug_path") == 0) {
+            unquote_text(value);
+            if (value[0] != '\0') {
+                copy_text(g_runtime_config.music_link_debug_path, sizeof(g_runtime_config.music_link_debug_path), value);
             }
         }
     }
@@ -344,4 +379,16 @@ const char *player_runtime_device_id(void)
 {
     ensure_loaded();
     return g_runtime_config.device_id;
+}
+
+int player_runtime_music_link_debug(void)
+{
+    ensure_loaded();
+    return g_runtime_config.music_link_debug;
+}
+
+const char *player_runtime_music_link_debug_path(void)
+{
+    ensure_loaded();
+    return g_runtime_config.music_link_debug_path;
 }

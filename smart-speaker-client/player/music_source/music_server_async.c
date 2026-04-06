@@ -11,6 +11,7 @@
 #include "debug_log.h"
 #include "music_source_manager.h"
 #include "player.h"
+#include "player_constants.h"
 #include "select.h"
 #include "select_text.h"
 
@@ -119,7 +120,8 @@ static void *mas_play_query_thread(void *arg)
     }
 
     player_get_playlist_ctx(&pl);
-    if (music_source_search(q, 1, pl.page_size > 0 ? pl.page_size : 10, &sr) != 0 || sr.count <= 0) {
+    if (music_source_search(q, 1, pl.page_size > 0 ? pl.page_size : PLAYER_ONLINE_PLAYLIST_PAGE_SIZE, &sr) != 0 ||
+        sr.count <= 0) {
         if (sr.count <= 0 && sr.online_search_disabled) {
             music_source_set_online_search_blocked(1);
         }

@@ -43,7 +43,7 @@ all: $(TARGET)
 TEST_CFLAGS = -Wall -g -I$(P)/.. -I$(P)/core -I$(P)/net -I$(P)/music_source $(shell pkg-config --cflags json-c 2>/dev/null)
 test_online_music_chain: test_online_music_chain.c music_source/music_source_server.c core/runtime_config.c
 	$(CC) $(TEST_CFLAGS) -o $@ \
-		test_online_music_chain.c music_source/music_source_server.c core/runtime_config.c \
+		test_online_music_chain.c music_source/music_source_server.c core/runtime_config.c ../debug_log.c \
 		$(shell pkg-config --libs json-c 2>/dev/null || echo -ljson-c)
 
 $(TARGET): $(OBJS)

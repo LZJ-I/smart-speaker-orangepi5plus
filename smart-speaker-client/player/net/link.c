@@ -15,19 +15,29 @@
 #include "music_source.h"
 #include "music_source_server.h"
 #include "player.h"
+#include "runtime_config.h"
 #include "shm.h"
 
 #define TAG "LINK"
 
 Music_Node* g_music_head = NULL;
+static unsigned int g_playlist_version = 1;
 
 /* main 可能 chdir 到 smart-speaker-client，勿用 ../data（会写到仓库外） */
 #define LINK_DEBUG_DEFAULT_PATH "data/player/music_link_debug.txt"
 
 static int link_debug_trace_enabled(void)
 {
-    const char *e = getenv("SMART_SPEAKER_LINK_DEBUG");
-    return e != NULL && e[0] != '\0' && strcmp(e, "0") != 0;
+    return player_runtime_music_link_debug() != 0;
+}
+
+static const char *link_debug_output_path(void)
+{
+    const char *p = player_runtime_music_link_debug_path();
+    if (p != NULL && p[0] != '\0') {
+        return p;
+    }
+    return LINK_DEBUG_DEFAULT_PATH;
 }
 
 static void link_debug_mkdir_p(char *path)
@@ -74,6 +84,15 @@ static void link_debug_ensure_parent_dir(const char *path)
     }
 }
 
+static void link_mark_playlist_changed(void)
+{
+    if (g_playlist_version == UINT_MAX) {
+        g_playlist_version = 1;
+        return;
+    }
+    g_playlist_version++;
+}
+
 static void link_debug_log_abs_once(const char *path)
 {
     static int logged;
@@ -104,10 +123,7 @@ void link_debug_dump_list(void)
     if (!link_debug_trace_enabled()) {
         return;
     }
-    path = getenv("SMART_SPEAKER_LINK_DEBUG_PATH");
-    if (path == NULL || path[0] == '\0') {
-        path = LINK_DEBUG_DEFAULT_PATH;
-    }
+    path = link_debug_output_path();
     link_debug_ensure_parent_dir(path);
     fp = fopen(path, "w");
     if (fp == NULL) {
@@ -178,6 +194,24 @@ static void copy_node_value(Music_Node *dst, const Music_Node *src)
     safe_copy(dst->source, sizeof(dst->source), src->source);
     safe_copy(dst->song_id, sizeof(dst->song_id), src->song_id);
     safe_copy(dst->play_url, sizeof(dst->play_url), src->play_url);
+}
+
+static int node_matches_identity(const Music_Node *node, const char *source, const char *song_id)
+{
+    const char *node_id;
+
+    if (node == NULL || song_id == NULL || song_id[0] == '\0') {
+        return 0;
+    }
+    node_id = node->id[0] != '\0' ? node->id : node->song_id;
+    if (strcmp(node_id, song_id) != 0) {
+        return 0;
+    }
+    if (source != NULL && source[0] != '\0' &&
+        node->source[0] != '\0' && strcmp(node->source, source) != 0) {
+        return 0;
+    }
+    return 1;
 }
 
 static void format_display_name(const Music_Node *node, char *buf, size_t buf_size)
@@ -254,6 +288,7 @@ int link_init()
         return -1;
     }
     memset(g_music_head, 0, sizeof(Music_Node));
+    g_playlist_version = 1;
     srand((unsigned int)(time(NULL) ^ getpid()));
     if (link_debug_trace_enabled()) {
         link_debug_dump_list();
@@ -314,6 +349,7 @@ int link_insert_node_after_meta(Music_Node *anchor, const char *source, const ch
         anchor->next->prev = node;
     }
     anchor->next = node;
+    link_mark_playlist_changed();
     link_debug_dump_list();
     return 0;
 }
@@ -456,6 +492,70 @@ int Parse_music_name(char *buf)
     return 0;
 }
 
+int link_find_by_display_name(const char *display, Music_Node *out)
+{
+    Music_Node *current;
+    char disp[MUSIC_MAX_NAME + SINGER_MAX_NAME + 2];
+
+    if (display == NULL || display[0] == '\0' || out == NULL || g_music_head == NULL) {
+        return -1;
+    }
+    for (current = g_music_head->next; current != NULL; current = current->next) {
+        format_display_name(current, disp, sizeof(disp));
+        if (strcmp(disp, display) == 0) {
+            copy_node_value(out, current);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int link_get_music_at(int index, Music_Node *out)
+{
+    Music_Node *current;
+    int current_index;
+
+    if (index < 0 || out == NULL || g_music_head == NULL) {
+        return -1;
+    }
+    current = g_music_head->next;
+    current_index = 0;
+    while (current != NULL) {
+        if (current_index == index) {
+            copy_node_value(out, current);
+            return 0;
+        }
+        current = current->next;
+        current_index++;
+    }
+    return -1;
+}
+
+int link_get_current_index(const char *source, const char *song_id)
+{
+    Music_Node *current;
+    int current_index;
+
+    if (g_music_head == NULL || song_id == NULL || song_id[0] == '\0') {
+        return -1;
+    }
+    current = g_music_head->next;
+    current_index = 0;
+    while (current != NULL) {
+        if (node_matches_identity(current, source, song_id)) {
+            return current_index;
+        }
+        current = current->next;
+        current_index++;
+    }
+    return -1;
+}
+
+unsigned int link_get_playlist_version(void)
+{
+    return g_playlist_version;
+}
+
 void link_traverse_list(char** music_list)
 {
     Music_Node* current = (g_music_head != NULL) ? g_music_head->next : NULL;
@@ -472,6 +572,11 @@ void link_traverse_list(char** music_list)
             music_list[index++] = strdup(display);
         }
         current = current->next;
+    }
+    if (music_list != NULL) {
+        for (int j = index; j < GET_MAX_MUSIC; j++) {
+            music_list[j] = NULL;
+        }
     }
 }
 
@@ -501,6 +606,7 @@ int link_get_next_music(const char *cur_source, const char *cur_song_id, int mod
 void link_clear_list(void)
 {
     Music_Node *current = (g_music_head != NULL) ? g_music_head->next : NULL;
+    int changed = (current != NULL);
     while (current != NULL) {
         Music_Node *next = current->next;
         free(current);
@@ -508,6 +614,9 @@ void link_clear_list(void)
     }
     if (g_music_head != NULL) {
         g_music_head->next = NULL;
+    }
+    if (changed) {
+        link_mark_playlist_changed();
     }
     link_debug_dump_list();
 }

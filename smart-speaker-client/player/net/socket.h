@@ -46,6 +46,10 @@ void socket_set_single_mode();
 
 // 处理服务器获取当前音乐列表请求（主动上传新的歌曲）
 void socket_upload_music_list();
+void socket_play_assign_song(const char *json_buf);
+void socket_play_playlist(const char *json_buf);
+void socket_playlist_page_next(void);
+void socket_playlist_page_prev(void);
 
 // 断开服务器
 int socket_disconnect();

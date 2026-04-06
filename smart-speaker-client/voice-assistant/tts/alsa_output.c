@@ -19,6 +19,7 @@ void cleanup_alsa_output(void) {
 }
 
 int pcm_write_all(snd_pcm_t *pcm, const int16_t *buf, snd_pcm_uframes_t frames) {
+    int zero_write_retries = 0;
     while (frames > 0) {
         snd_pcm_sframes_t n = snd_pcm_writei(pcm, buf, frames);
         if (n == -EPIPE) {
@@ -30,6 +31,14 @@ int pcm_write_all(snd_pcm_t *pcm, const int16_t *buf, snd_pcm_uframes_t frames) 
             if (n < 0) return (int)n;
             continue;
         }
+        if (n == 0) {
+            if (++zero_write_retries >= 5) {
+                return -EIO;
+            }
+            snd_pcm_wait(pcm, 100);
+            continue;
+        }
+        zero_write_retries = 0;
         buf += n * CHANNELS;
         frames -= (snd_pcm_uframes_t)n;
     }

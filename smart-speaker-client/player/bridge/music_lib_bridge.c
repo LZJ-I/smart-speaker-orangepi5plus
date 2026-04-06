@@ -7,6 +7,7 @@
 #include "player.h"
 #include "music_source.h"
 #include "music_source_manager.h"
+#include "player_constants.h"
 
 #define TAG "MUSIC-LIB"
 
@@ -81,7 +82,7 @@ int music_lib_search_fill_list(const char *keyword, int max_count)
 {
     int total_pages = 0;
     int count = 0;
-    int page_size = (max_count > 0) ? max_count : 10;
+    int page_size = (max_count > 0) ? max_count : PLAYER_ONLINE_PLAYLIST_PAGE_SIZE;
     if (music_lib_search_fill_list_page(keyword, 1, page_size, &total_pages, &count) != 0) {
         return -1;
     }
@@ -251,7 +252,7 @@ int music_lib_search_play_first(const char *keyword)
     int total_pages = 0;
     int count = 0;
     if (keyword == NULL || keyword[0] == '\0') return -1;
-    if (music_lib_search_fill_list_page(keyword, 1, 10, &total_pages, &count) != 0 || count <= 0) return -1;
+    if (music_lib_search_fill_list_page(keyword, 1, PLAYER_ONLINE_PLAYLIST_PAGE_SIZE, &total_pages, &count) != 0 || count <= 0) return -1;
     player_start_play();
     return 0;
 }

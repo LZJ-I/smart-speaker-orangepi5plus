@@ -9,5 +9,7 @@ const char *player_runtime_player_mode(void);
 const char *player_runtime_gst_alsa_device(void);
 const char *player_runtime_music_search_source(void);
 const char *player_runtime_device_id(void);
+int player_runtime_music_link_debug(void);
+const char *player_runtime_music_link_debug_path(void);
 
 #endif

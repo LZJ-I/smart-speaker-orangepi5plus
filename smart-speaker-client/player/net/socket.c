@@ -11,6 +11,8 @@
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <time.h>
 #include <json-c/json.h>
 
 #include "debug_log.h"
@@ -22,6 +24,7 @@
 #include "player.h"
 #include "runtime_config.h"
 #include "socket_report.h"
+#include "music_source_server.h"
 
 #define TAG "SOCKET"
 
@@ -108,6 +111,68 @@ static void socket_handle_disconnect(void)
     tts_play_audio_file(SERVER_DISCONNECT_OFFLINE_WAV);
 }
 
+static const char *socket_json_optional_string(struct json_object *obj, const char *key)
+{
+    struct json_object *value;
+
+    if (obj == NULL || key == NULL) {
+        return NULL;
+    }
+    value = json_object_object_get(obj, key);
+    if (value == NULL || !json_object_is_type(value, json_type_string)) {
+        return NULL;
+    }
+    return json_object_get_string(value);
+}
+
+static void socket_add_playlist_page_fields(struct json_object *json)
+{
+    player_playlist_ctx_t ctx;
+    if (json == NULL) {
+        return;
+    }
+    player_get_playlist_ctx(&ctx);
+    json_object_object_add(json, "playlist_page", json_object_new_int(ctx.current_page));
+    json_object_object_add(json, "playlist_total_pages", json_object_new_int(ctx.total_pages));
+}
+
+static void socket_add_queue_snapshot_fields(struct json_object *json, const Shm_Data *data)
+{
+    int current_index;
+
+    if (json == NULL || data == NULL) {
+        return;
+    }
+    current_index = link_get_current_index(data->current_source, data->current_song_id);
+    json_object_object_add(json, "deviceid", json_object_new_string(player_runtime_device_id()));
+    json_object_object_add(json, "playlist_version", json_object_new_int64((int64_t)link_get_playlist_version()));
+    json_object_object_add(json, "current_index", json_object_new_int(current_index));
+    json_object_object_add(json, "current_source", json_object_new_string(data->current_source));
+    json_object_object_add(json, "current_song_id", json_object_new_string(data->current_song_id));
+    socket_add_playlist_page_fields(json);
+}
+
+static void socket_append_music_item(struct json_object *music_arr, const Music_Node *node)
+{
+    struct json_object *item;
+    const char *title;
+    const char *subtitle;
+    const char *song_id;
+
+    if (music_arr == NULL || node == NULL) {
+        return;
+    }
+    title = (node->title[0] != '\0') ? node->title : node->song_name;
+    subtitle = (node->subtitle[0] != '\0') ? node->subtitle : node->singer;
+    song_id = (node->id[0] != '\0') ? node->id : node->song_id;
+    item = json_object_new_object();
+    json_object_object_add(item, "title", json_object_new_string(title));
+    json_object_object_add(item, "subtitle", json_object_new_string(subtitle));
+    json_object_object_add(item, "source", json_object_new_string(node->source));
+    json_object_object_add(item, "id", json_object_new_string(song_id));
+    json_object_array_add(music_arr, item);
+}
+
 // 初始化socket连接
 int socket_init()
 {
@@ -144,7 +209,11 @@ int socket_init()
             continue;
         }
         LOGI(TAG, "连接服务器成功: %s:%d", server_ip, server_port);
-        
+
+        if (!player_env_forces_offline()) {
+            link_clear_list();
+        }
+
         // 把服务器套接字加入到select中
         FD_SET(g_socket_fd, &READSET);
 
@@ -163,6 +232,7 @@ int socket_init()
 
         if (!player_env_forces_offline()) {
             g_current_online_mode = ONLINE_MODE_YES;
+            player_warm_online_playlist();
         }
 
         return 0;
@@ -196,7 +266,7 @@ int socket_recv_data(char *buf)
         }
     }
     len = *(int *)buf;
-    if (len < 0 || len > 1023) {
+    if (len < 0 || len > SOCKET_JSON_BUF_MAX) {
         LOGE(TAG, "非法报文长度: %d", len);
         socket_handle_disconnect();
         return -1;
@@ -230,11 +300,16 @@ int socket_get_music(const char *singer)
     json_object_object_add(json, "singer", json_object_new_string(singer));
     socket_send_data(json);
 
-    // 接收并解析响应
-    char msg[1024] = {0};
-    if(socket_recv_data(msg) == 0) {
-        // 解析并插入链表
-        Parse_music_name(msg);
+    {
+        char *msg = malloc((size_t)SOCKET_JSON_BUF_MAX + 1u);
+        if (msg == NULL) {
+            return -1;
+        }
+        memset(msg, 0, (size_t)SOCKET_JSON_BUF_MAX + 1u);
+        if (socket_recv_data(msg) == 0) {
+            Parse_music_name(msg);
+        }
+        free(msg);
     }
 
     return 0;
@@ -477,12 +552,110 @@ void socket_set_order_mode()
     }
 }
 
+void socket_play_assign_song(const char *json_buf)
+{
+    struct json_object *jo;
+    const char *music;
+    const char *source;
+    const char *song_id;
+    const char *title;
+    const char *subtitle;
+    int ok;
+    struct json_object *reply;
+
+    if (json_buf == NULL) {
+        return;
+    }
+    jo = json_tokener_parse(json_buf);
+    if (jo == NULL) {
+        reply = json_object_new_object();
+        json_object_object_add(reply, "cmd", json_object_new_string("reply_app_play_assign_song"));
+        json_object_object_add(reply, "result", json_object_new_string("failure"));
+        socket_send_data(reply);
+        return;
+    }
+    music = socket_json_optional_string(jo, "music");
+    source = socket_json_optional_string(jo, "source");
+    song_id = socket_json_optional_string(jo, "id");
+    title = socket_json_optional_string(jo, "title");
+    subtitle = socket_json_optional_string(jo, "subtitle");
+    if ((song_id == NULL || song_id[0] == '\0') &&
+        (music == NULL || music[0] == '\0') &&
+        (title == NULL || title[0] == '\0')) {
+        json_object_put(jo);
+        reply = json_object_new_object();
+        json_object_object_add(reply, "cmd", json_object_new_string("reply_app_play_assign_song"));
+        json_object_object_add(reply, "result", json_object_new_string("failure"));
+        socket_send_data(reply);
+        return;
+    }
+    if ((song_id != NULL && song_id[0] != '\0') || (title != NULL && title[0] != '\0')) {
+        ok = (player_play_assign_or_insert_song(source, song_id, title, subtitle) == 0);
+    } else {
+        ok = (player_play_assign_display(music) == 0);
+    }
+    json_object_put(jo);
+    reply = json_object_new_object();
+    json_object_object_add(reply, "cmd", json_object_new_string("reply_app_play_assign_song"));
+    json_object_object_add(reply, "result", json_object_new_string(ok ? "success" : "failure"));
+    socket_send_data(reply);
+}
+
+void socket_play_playlist(const char *json_buf)
+{
+    struct json_object *jo;
+    const char *source;
+    const char *playlist_id;
+    MusicSourceResult result;
+    struct json_object *reply;
+    int i;
+    int ok = 0;
+
+    if (json_buf == NULL) {
+        return;
+    }
+    memset(&result, 0, sizeof(result));
+    jo = json_tokener_parse(json_buf);
+    if (jo == NULL) {
+        reply = json_object_new_object();
+        json_object_object_add(reply, "cmd", json_object_new_string("reply_app_play_playlist"));
+        json_object_object_add(reply, "result", json_object_new_string("failure"));
+        socket_send_data(reply);
+        return;
+    }
+    source = socket_json_optional_string(jo, "source");
+    playlist_id = socket_json_optional_string(jo, "id");
+    if (playlist_id != NULL && playlist_id[0] != '\0' &&
+        music_source_server_load_playlist_detail(playlist_id, source, &result) == 0 && result.count > 0) {
+        link_clear_list();
+        ok = 1;
+        for (i = 0; i < result.count; ++i) {
+            const MusicSourceItem *it = &result.items[i];
+            if (link_add_music_lib(it->source, it->song_id, it->singer, it->song_name,
+                                   (it->play_url[0] != '\0') ? it->play_url : NULL) != 0) {
+                ok = 0;
+                break;
+            }
+        }
+        if (ok) {
+            player_stop_play();
+            player_start_play();
+            socket_upload_music_list();
+        }
+    }
+    music_source_free_result(&result);
+    json_object_put(jo);
+    reply = json_object_new_object();
+    json_object_object_add(reply, "cmd", json_object_new_string("reply_app_play_playlist"));
+    json_object_object_add(reply, "result", json_object_new_string(ok ? "success" : "failure"));
+    socket_send_data(reply);
+}
+
 // 处理服务器设置单曲循环播放模式请求
 void socket_set_single_mode()
 {
     Shm_Data current_data;
     Shm_Data next_data;
-    // 获取共享内存，获取当前播放模式
     shm_get(&current_data);
     // 设置单曲循环播放模式
     player_set_mode(SINGLE_PLAY);
@@ -506,32 +679,62 @@ void socket_set_single_mode()
     }
 }
 
+void socket_playlist_page_next(void)
+{
+    json_object *json;
+    if (player_playlist_load_next_page() > 0) {
+        json = json_object_new_object();
+        json_object_object_add(json, "cmd", json_object_new_string("reply_app_playlist_next_page"));
+        json_object_object_add(json, "result", json_object_new_string("success"));
+        socket_send_data(json);
+    } else {
+        json = json_object_new_object();
+        json_object_object_add(json, "cmd", json_object_new_string("reply_app_playlist_next_page"));
+        json_object_object_add(json, "result", json_object_new_string("failure"));
+        socket_send_data(json);
+    }
+}
+
+void socket_playlist_page_prev(void)
+{
+    json_object *json;
+    if (player_playlist_load_prev_page() > 0) {
+        json = json_object_new_object();
+        json_object_object_add(json, "cmd", json_object_new_string("reply_app_playlist_prev_page"));
+        json_object_object_add(json, "result", json_object_new_string("success"));
+        socket_send_data(json);
+    } else {
+        json = json_object_new_object();
+        json_object_object_add(json, "cmd", json_object_new_string("reply_app_playlist_prev_page"));
+        json_object_object_add(json, "result", json_object_new_string("failure"));
+        socket_send_data(json);
+    }
+}
+
 // 处理服务器获取当前音乐列表请求（主动上传新的歌曲）
 void socket_upload_music_list()
 {
-    // 遍历链表
-    char* music_list[GET_MAX_MUSIC];
-    link_traverse_list(music_list);
-    // 创建json
-    json_object *json = json_object_new_object();  
-    json_object_object_add(json, "cmd", json_object_new_string("upload_music_list"));
-    json_object *music_arr = json_object_new_array();  // 创建音乐数组
-    for(int i = 0; i < GET_MAX_MUSIC; i++)  // 将歌名插入数组
-    {
-        if(music_list[i] == NULL)
-            break;
-        json_object_array_add(music_arr, json_object_new_string(music_list[i]));
-    }
-    json_object_object_add(json, "music", music_arr);  // 将数组添加到json
-    // 发送给服务器
-    if(json != NULL)
-        socket_send_data(json);
+    Shm_Data data;
+    json_object *json;
+    json_object *music_arr;
+    int i;
 
-    // 释放数组、 释放json
-    json_object_put(json);  // 释放json
-    for(int i = 0; i<GET_MAX_MUSIC; i++)
-    {
-        free(music_list[i]);
+    shm_get(&data);
+    json = json_object_new_object();
+    json_object_object_add(json, "cmd", json_object_new_string("upload_music_list"));
+    socket_add_queue_snapshot_fields(json, &data);
+    music_arr = json_object_new_array();
+    for (i = 0; i < GET_MAX_MUSIC; i++) {
+        Music_Node item;
+        memset(&item, 0, sizeof(item));
+        if (link_get_music_at(i, &item) != 0) {
+            break;
+        }
+        socket_append_music_item(music_arr, &item);
+    }
+    json_object_object_add(json, "music", music_arr);
+    if (json != NULL) {
+        socket_send_data(json);
     }
 }
 

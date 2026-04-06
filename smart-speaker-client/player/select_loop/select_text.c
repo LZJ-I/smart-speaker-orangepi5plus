@@ -523,12 +523,12 @@ int select_text_extract_music_query_source(const char *text, char *out, size_t o
     if (strstr(normalized, "我想听歌") != NULL || strstr(normalized, "想听歌") != NULL ||
         strstr(normalized, "听歌") != NULL || strstr(normalized, "播放音乐") != NULL ||
         strstr(normalized, "我想听音乐") != NULL || strstr(normalized, "想听音乐") != NULL) {
-        snprintf(out, out_size, "热门");
+        out[0] = '\0';
         return 1;
     }
     if (strcmp(normalized, "我想听") == 0 || strcmp(normalized, "想听") == 0 ||
         strcmp(normalized, "我想听。") == 0 || strcmp(normalized, "想听。") == 0) {
-        snprintf(out, out_size, "热门");
+        out[0] = '\0';
         return 1;
     }
 

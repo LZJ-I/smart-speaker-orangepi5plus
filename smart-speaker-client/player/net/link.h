@@ -9,7 +9,7 @@
 #define MUSIC_ID_MAX 256
 #define MUSIC_PLAY_URL_MAX 2048
 
-#define GET_MAX_MUSIC  5 // 单次获取歌曲数量
+#define GET_MAX_MUSIC  1024
 
 
 typedef struct Node{
@@ -46,11 +46,15 @@ int link_get_first_music(Music_Node *out_node);
 int Parse_music_name(char *buf);
 // 遍历链表(单纯打印或返回当前歌单)
 void link_traverse_list(char** music_list);
+int link_get_music_at(int index, Music_Node *out);
+int link_get_current_index(const char *source, const char *song_id);
+unsigned int link_get_playlist_version(void);
+int link_find_by_display_name(const char *display, Music_Node *out);
 // 根据当前歌曲、当前模式、找到下一首歌
 int link_get_next_music(const char *cur_source, const char *cur_song_id, int mode, int force_advance, Music_Node *next_music);
 // 清空链表
 void link_clear_list(void);
-// 调试：将当前链表写入 data（需 SMART_SPEAKER_LINK_DEBUG=1）
+// 调试：将当前链表写入文件（client.toml 中 music_link_debug = true）
 void link_debug_dump_list(void);
 // 根据当前歌曲，找到上一首歌
 int link_get_prev_music(const char *cur_source, const char *cur_song_id, int wrap_at_head, Music_Node *prev_music);

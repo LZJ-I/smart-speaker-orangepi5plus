@@ -144,7 +144,7 @@ int try_music_lib_play(const char *text)
         return 0;
     }
     if (select_text_is_hot_generic_query(query)) {
-        LOGI(TAG, "搜歌关键词 source=%s query=热门", source[0] != '\0' ? source : "default");
+        LOGI(TAG, "搜歌关键词 source=%s query=<default-leaderboard>", source[0] != '\0' ? source : "default");
         if (player_search_hot_random_prepare_for_tts(&track) != 0) {
             if (g_current_online_mode == ONLINE_MODE_NO) {
                 player_voice_cmd_clear_followup();

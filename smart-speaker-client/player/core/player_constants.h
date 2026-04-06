@@ -37,4 +37,9 @@
 #define NOOP_REPLY_OK_WAV "./assets/tts/noop_reply_ok.wav"
 #define PLAYLIST_NOT_FOUND_WAV "./assets/tts/playlist_not_found.wav"
 
+#define SOCKET_JSON_BUF_MAX (512 * 1024)
+
+/* 在线歌单仅驻留一页：与 Node 歌单详情单次条数上限接近，减少翻页 HTTP 次数 */
+#define PLAYER_ONLINE_PLAYLIST_PAGE_SIZE 30
+
 #endif

@@ -50,6 +50,9 @@ int music_source_search(const char *keyword, int page, int page_size, MusicSourc
     if (ret == 0 && result->count > 0) {
         return 0;
     }
+    if (g_current_online_mode == ONLINE_MODE_YES) {
+        return ret;
+    }
     if (fallback != NULL) {
         music_source_free_result(result);
         ret = fallback->search(keyword, page, page_size, result);

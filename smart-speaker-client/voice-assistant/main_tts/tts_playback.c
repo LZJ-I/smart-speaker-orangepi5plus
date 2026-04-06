@@ -333,6 +333,9 @@ static void* playback_wav_thread(void *arg) {
     if (!s_wav_play_is_wake)
         notify_player_tts_event("tts:done");
     s_wav_play_is_wake = 0;
+    pthread_mutex_lock(&playback_mutex);
+    playback_thread = 0;
+    pthread_mutex_unlock(&playback_mutex);
     return NULL;
 }
 
@@ -344,12 +347,12 @@ void tts_playback_stop(void) {
     pthread_mutex_lock(&playback_mutex);
     playback_should_stop = 1;
     pthread_mutex_unlock(&playback_mutex);
+    if (g_pcm_handle != NULL) {
+        snd_pcm_drop(g_pcm_handle);
+    }
     if (playback_thread != 0) {
         pthread_join(playback_thread, NULL);
         playback_thread = 0;
-    }
-    if (g_pcm_handle != NULL) {
-        snd_pcm_drop(g_pcm_handle);
     }
 }
 

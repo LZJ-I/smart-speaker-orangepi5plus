@@ -20,6 +20,7 @@
 #include "select_text.h"
 #include "select_music_llm.h"
 #include "music_server_async.h"
+#include "player_constants.h"
 
 #define TAG "SELECT"
 
@@ -520,9 +521,13 @@ static void Parse_server_cmd(char *buf, char *cmd)
 // 处理服务器发送的信息
 void select_read_socket(void)
 {
-    // 接收服务器信息
-    char buf[1024] = {0};
+    char *buf = malloc((size_t)SOCKET_JSON_BUF_MAX + 1u);
+    if (buf == NULL) {
+        return;
+    }
+    memset(buf, 0, (size_t)SOCKET_JSON_BUF_MAX + 1u);
     if (socket_recv_data(buf) != 0) {
+        free(buf);
         return;
     }
     // 解析服务器命令
@@ -595,12 +600,16 @@ void select_read_socket(void)
     {
         socket_upload_music_list();
     }
-
-    // // 处理服务器控制应用播放指定歌曲（歌手/歌曲）
-    // else if(strcmp(cmd, "app_play_assign_song") == 0)
-    // {
-    //     socket_play_assign_song();
-    // }
+    else if (strcmp(cmd, "app_play_assign_song") == 0) {
+        socket_play_assign_song(buf);
+    } else if (strcmp(cmd, "app_play_playlist") == 0) {
+        socket_play_playlist(buf);
+    } else if (strcmp(cmd, "app_playlist_next_page") == 0) {
+        socket_playlist_page_next();
+    } else if (strcmp(cmd, "app_playlist_prev_page") == 0) {
+        socket_playlist_page_prev();
+    }
+    free(buf);
 }
 
 

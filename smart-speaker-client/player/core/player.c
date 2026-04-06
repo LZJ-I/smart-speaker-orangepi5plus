@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <wait.h>
 #include <errno.h>
+#include <time.h>
 #include <sys/select.h>
 #include <sys/mount.h>
 #include <glob.h>
@@ -23,6 +24,7 @@
 #include "socket.h"
 #include "debug_log.h"
 #include "runtime_config.h"
+#include "player_constants.h"
 
 #define TAG "PLAYER"
 
@@ -39,10 +41,10 @@ int g_tts_fd = -1;
 int g_player_ctrl_fd = -1;
 
 static player_playlist_ctx_t g_playlist_ctx = {
-    .keyword = "热门",
+    .keyword = "",
     .current_page = 1,
     .total_pages = 1,
-    .page_size = 10
+    .page_size = PLAYER_ONLINE_PLAYLIST_PAGE_SIZE
 };
 
 static volatile sig_atomic_t g_playlist_eof_flag = 0;
@@ -55,6 +57,18 @@ static int player_write_fifo(const char *cmd);
 static void asr_kws_switch_offline_mode(void);
 static void player_commit_offline_runtime_state(void);
 static void player_sync_shm_to_first_playable_local_song(void);
+
+static const char *player_default_recommend_keyword(void)
+{
+    return "";
+}
+
+static void player_publish_playlist_snapshot_if_online(void)
+{
+    if (g_current_online_mode == ONLINE_MODE_YES && g_socket_fd >= 0) {
+        socket_upload_music_list();
+    }
+}
 
 void player_set_audio_focus(int focus_state)
 {
@@ -415,16 +429,18 @@ static void child_process(Music_Node *start_song)
             if (g_current_state != PLAY_STATE_PLAY) {
                 break;
             }
+            shm_get(&s);
             if (!WIFEXITED(status) && !WIFSIGNALED(status)) {
                 if (g_current_state != PLAY_STATE_PLAY) {
                     break;
                 }
+                if (s.current_mode != SINGLE_PLAY) {
+                    force_advance = 1;
+                }
+            }
+            if (WIFEXITED(status) && WEXITSTATUS(status) != 0 && s.current_mode != SINGLE_PLAY) {
                 force_advance = 1;
             }
-            if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-                force_advance = 1;
-            }
-            shm_get(&s);
             if (s.current_song_id[0] != '\0') {
                 Music_Node target;
                 if (link_get_music_by_source_id(NULL, s.current_song_id, &target) == 0 &&
@@ -494,7 +510,7 @@ void player_start_play()
     }
     memset(&start_song, 0, sizeof(start_song));
     if (select_song_from_shm(&start_song) != 0) {
-        keyword = (g_playlist_ctx.keyword[0] != '\0') ? g_playlist_ctx.keyword : "热门";
+        keyword = (g_playlist_ctx.keyword[0] != '\0') ? g_playlist_ctx.keyword : player_default_recommend_keyword();
         if (player_prepare_keyword_playlist(keyword, 0) <= 0 || select_song_from_shm(&start_song) != 0) {
             LOGW(TAG, "当前无可播放歌曲");
             return;
@@ -607,11 +623,9 @@ int player_playlist_load_next_page(void)
     int filled_count = 0;
     int next_page;
     int tries = 0;
-    const char *search_kw;
-    if (g_playlist_ctx.keyword[0] == '\0') {
-        return -1;
-    }
-    search_kw = g_playlist_ctx.keyword;
+    const char *search_kw = (g_playlist_ctx.keyword[0] != '\0')
+                                ? g_playlist_ctx.keyword
+                                : player_default_recommend_keyword();
     next_page = g_playlist_ctx.current_page + 1;
     if (g_playlist_ctx.total_pages > 0 && next_page > g_playlist_ctx.total_pages) next_page = 1;
     while (tries < (g_playlist_ctx.total_pages > 0 ? g_playlist_ctx.total_pages : 3)) {
@@ -628,6 +642,7 @@ int player_playlist_load_next_page(void)
                 update_shm_current_song(&s, &first_song);
                 shm_set(&s);
             }
+            player_publish_playlist_snapshot_if_online();
             LOGI(TAG, "翻页成功 page=%d/%d count=%d",
                  g_playlist_ctx.current_page, g_playlist_ctx.total_pages, filled_count);
             return filled_count;
@@ -639,13 +654,53 @@ int player_playlist_load_next_page(void)
     return -1;
 }
 
+int player_playlist_load_prev_page(void)
+{
+    int total_pages = 0;
+    int filled_count = 0;
+    int prev_page;
+    int tries = 0;
+    const char *search_kw = (g_playlist_ctx.keyword[0] != '\0')
+                                ? g_playlist_ctx.keyword
+                                : player_default_recommend_keyword();
+    prev_page = g_playlist_ctx.current_page - 1;
+    if (g_playlist_ctx.total_pages > 0 && prev_page < 1) {
+        prev_page = g_playlist_ctx.total_pages;
+    }
+    while (tries < (g_playlist_ctx.total_pages > 0 ? g_playlist_ctx.total_pages : 3)) {
+        if (music_lib_search_fill_list_page(search_kw, prev_page, g_playlist_ctx.page_size,
+                                            &total_pages, &filled_count) == 0 &&
+            filled_count > 0) {
+            Music_Node first_song;
+            Shm_Data s;
+            g_playlist_ctx.current_page = prev_page;
+            g_playlist_ctx.total_pages = (total_pages > 0) ? total_pages : 1;
+            memset(&first_song, 0, sizeof(first_song));
+            if (link_get_first_music(&first_song) == 0) {
+                shm_get(&s);
+                update_shm_current_song(&s, &first_song);
+                shm_set(&s);
+            }
+            player_publish_playlist_snapshot_if_online();
+            LOGI(TAG, "上翻页成功 page=%d/%d count=%d",
+                 g_playlist_ctx.current_page, g_playlist_ctx.total_pages, filled_count);
+            return filled_count;
+        }
+        prev_page--;
+        if (total_pages > 0 && prev_page < 1) {
+            prev_page = total_pages;
+        }
+        tries++;
+    }
+    return -1;
+}
+
 int player_prepare_keyword_playlist(const char *keyword, int auto_start)
 {
     int total_pages = 0;
     int filled_count = 0;
     char normalized[sizeof(g_playlist_ctx.keyword)];
-    if (keyword == NULL || keyword[0] == '\0') return -1;
-    copy_text(normalized, sizeof(normalized), keyword);
+    copy_text(normalized, sizeof(normalized), (keyword != NULL) ? keyword : "");
     if (strcmp(normalized, g_playlist_ctx.keyword) != 0) {
         copy_text(g_playlist_ctx.keyword, sizeof(g_playlist_ctx.keyword), normalized);
         g_playlist_ctx.current_page = 1;
@@ -657,6 +712,7 @@ int player_prepare_keyword_playlist(const char *keyword, int auto_start)
         return -1;
     }
     g_playlist_ctx.total_pages = (total_pages > 0) ? total_pages : 1;
+    player_publish_playlist_snapshot_if_online();
     if (auto_start) {
         player_stop_play();
         player_start_play();
@@ -718,6 +774,7 @@ static int player_voice_intro_shm_after_insert(Music_Node *out_track, const char
     if (out_track != NULL) {
         *out_track = next_song;
     }
+    player_publish_playlist_snapshot_if_online();
     return 0;
 }
 
@@ -791,7 +848,7 @@ int player_search_insert_keyword_and_play(const char *keyword)
 
 int player_search_hot_random_prepare_for_tts(Music_Node *out_track)
 {
-    const char *keyword = "热门";
+    const char *keyword = player_default_recommend_keyword();
     int total_pages = 0;
     int filled_count = 0;
     int target_page = 1;
@@ -813,7 +870,10 @@ int player_search_hot_random_prepare_for_tts(Music_Node *out_track)
     if (g_playlist_ctx.total_pages > 1) {
         target_page = (rand() % g_playlist_ctx.total_pages) + 1;
         if (music_lib_search_fill_list_page(keyword, target_page, g_playlist_ctx.page_size, &total_pages, &filled_count) != 0 || filled_count <= 0) {
-            return -1;
+            target_page = 1;
+            if (music_lib_search_fill_list_page(keyword, target_page, g_playlist_ctx.page_size, &total_pages, &filled_count) != 0 || filled_count <= 0) {
+                return -1;
+            }
         }
         g_playlist_ctx.total_pages = (total_pages > 0) ? total_pages : g_playlist_ctx.total_pages;
     }
@@ -844,6 +904,7 @@ int player_search_hot_random_prepare_for_tts(Music_Node *out_track)
     }
     update_shm_current_song(&s, &picked_song);
     shm_set(&s);
+    player_publish_playlist_snapshot_if_online();
 
     if (out_track != NULL) {
         *out_track = picked_song;
@@ -898,7 +959,7 @@ int player_next_song()
             }
             ret = 0;
         } else {
-            keyword = (g_playlist_ctx.keyword[0] != '\0') ? g_playlist_ctx.keyword : "热门";
+            keyword = (g_playlist_ctx.keyword[0] != '\0') ? g_playlist_ctx.keyword : player_default_recommend_keyword();
             if (player_prepare_keyword_playlist(keyword, 0) <= 0) {
                 return -1;
             }
@@ -984,6 +1045,108 @@ int player_prev_song()
     return 0;
 }
 
+static int player_switch_to_picked_song(const Music_Node *picked)
+{
+    Shm_Data s;
+    int was_stopped;
+
+    if (picked == NULL || picked->song_name[0] == '\0' || picked->song_id[0] == '\0') {
+        return -1;
+    }
+    was_stopped = (g_current_state == PLAY_STATE_STOP);
+    shm_get(&s);
+    update_shm_current_song(&s, picked);
+    shm_set(&s);
+    if (was_stopped) {
+        s.child_pid = 0;
+        s.grand_pid = 0;
+        shm_set(&s);
+        player_start_play();
+        return 0;
+    }
+    shm_get(&s);
+    if (pid_is_alive(s.child_pid)) {
+        g_current_state = PLAY_STATE_PLAY;
+        g_current_suspend = PLAY_SUSPEND_NO;
+        player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
+        stop_active_grandchild(0);
+        return 0;
+    }
+    player_start_play();
+    return 0;
+}
+
+int player_play_assign_display(const char *display)
+{
+    Music_Node picked;
+
+    if (display == NULL || display[0] == '\0') {
+        return -1;
+    }
+    memset(&picked, 0, sizeof(picked));
+    if (link_find_by_display_name(display, &picked) != 0) {
+        LOGW(TAG, "指定歌曲未找到: %s", display);
+        return -1;
+    }
+    return player_switch_to_picked_song(&picked);
+}
+
+int player_play_assign_song(const char *source, const char *song_id, const char *title, const char *subtitle)
+{
+    Music_Node picked;
+    char resolved_source[MUSIC_SOURCE_MAX];
+    char resolved_id[MUSIC_ID_MAX];
+
+    memset(&picked, 0, sizeof(picked));
+    memset(resolved_source, 0, sizeof(resolved_source));
+    memset(resolved_id, 0, sizeof(resolved_id));
+
+    if (song_id != NULL && song_id[0] != '\0' &&
+        link_get_music_by_source_id(source, song_id, &picked) == 0) {
+        return player_switch_to_picked_song(&picked);
+    }
+    if (title != NULL && title[0] != '\0' &&
+        link_get_source_id(title, subtitle, resolved_source, sizeof(resolved_source),
+                           resolved_id, sizeof(resolved_id)) == 0 &&
+        link_get_music_by_source_id(resolved_source, resolved_id, &picked) == 0) {
+        return player_switch_to_picked_song(&picked);
+    }
+    LOGW(TAG, "指定歌曲未找到 source=%s id=%s title=%s subtitle=%s",
+         source != NULL ? source : "",
+         song_id != NULL ? song_id : "",
+         title != NULL ? title : "",
+         subtitle != NULL ? subtitle : "");
+    return -1;
+}
+
+int player_play_assign_or_insert_song(const char *source, const char *song_id, const char *title, const char *subtitle)
+{
+    MusicSourceItem item;
+    if (player_play_assign_song(source, song_id, title, subtitle) == 0) {
+        return 0;
+    }
+    if (g_current_online_mode != ONLINE_MODE_YES || source == NULL || source[0] == '\0' ||
+        song_id == NULL || song_id[0] == '\0') {
+        return -1;
+    }
+    memset(&item, 0, sizeof(item));
+    copy_text(item.source, sizeof(item.source), source);
+    copy_text(item.id, sizeof(item.id), song_id);
+    copy_text(item.song_id, sizeof(item.song_id), song_id);
+    copy_text(item.title, sizeof(item.title), (title != NULL) ? title : "");
+    copy_text(item.song_name, sizeof(item.song_name), item.title);
+    copy_text(item.subtitle, sizeof(item.subtitle), (subtitle != NULL) ? subtitle : "");
+    copy_text(item.singer, sizeof(item.singer), item.subtitle);
+    if (music_lib_resolve_insert_item_after_current(&item) != 0) {
+        return -1;
+    }
+    if (player_voice_intro_shm_after_insert(NULL, "", 0) != 0) {
+        return -1;
+    }
+    player_voice_intro_commit_insert_play();
+    return 0;
+}
+
 void player_set_mode(int mode)
 {
     Shm_Data s;
@@ -1042,9 +1205,15 @@ void player_process_async_events(void)
         g_child_exit_flag = 0;
     }
     if (g_playlist_eof_flag) {
+        Shm_Data s;
         g_playlist_eof_flag = 0;
         if (g_eof_autostart_suppressed) {
             g_eof_autostart_suppressed = 0;
+            return;
+        }
+        shm_get(&s);
+        if (s.current_mode == SINGLE_PLAY) {
+            player_eof_wrap_or_restart();
             return;
         }
         if (g_current_online_mode == ONLINE_MODE_NO) {
@@ -1205,7 +1374,7 @@ int player_offline_init_storage_and_library(int reset_player)
 {
     if (reset_player) {
         player_stop_play();
-        player_write_fifo("quit\n");
+        (void)player_write_fifo("quit\n");
         usleep(500000);
     }
     if (player_ensure_sdcard_mounted() != 0) {
@@ -1214,10 +1383,13 @@ int player_offline_init_storage_and_library(int reset_player)
         player_commit_offline_runtime_state();
         return -1;
     }
-    if (music_lib_load_all_local_to_link() != 0) {
+    {
+        int load_ret = music_lib_load_all_local_to_link();
+        if (load_ret != 0) {
         LOGW(TAG, "离线初始化：载入本地曲库失败");
         player_commit_offline_runtime_state();
         return -1;
+    }
     }
     player_sync_shm_to_first_playable_local_song();
     player_commit_offline_runtime_state();
@@ -1239,6 +1411,17 @@ void player_apply_env_mode(void)
 int player_env_forces_offline(void)
 {
     return g_env_forces_offline;
+}
+
+void player_warm_online_playlist(void)
+{
+    if (g_current_online_mode != ONLINE_MODE_YES) {
+        return;
+    }
+    if (player_env_forces_offline()) {
+        return;
+    }
+    (void)player_prepare_keyword_playlist("", 0);
 }
 
 int player_switch_offline_mode(void)

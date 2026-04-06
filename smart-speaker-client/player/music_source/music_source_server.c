@@ -447,6 +447,12 @@ int music_source_server_list_playlist_page(const char *keyword, const char *sour
                                              page, page_size, result);
 }
 
+int music_source_server_search_playlist_page(const char *keyword, const char *source,
+                                             int page, int page_size, MusicSourceResult *out_result)
+{
+    return music_source_server_list_playlist_page(keyword, source, page, page_size, out_result);
+}
+
 static int music_source_server_search(const char *keyword, int page, int page_size, MusicSourceResult *result)
 {
     return music_source_server_list_music_page(keyword, NULL, page, page_size, result);
@@ -659,6 +665,11 @@ int music_source_server_resolve_playlist_keyword(const char *keyword, const char
     }
     music_source_server_free_result(&playlists);
     return 0;
+}
+
+int music_source_server_load_playlist_detail(const char *playlist_id, const char *source, MusicSourceResult *out_result)
+{
+    return music_source_server_playlist_detail(playlist_id, source, out_result);
 }
 
 const MusicSourceBackend *music_source_server_backend(void)
