@@ -434,7 +434,6 @@ bool reply_music_search_song(Server *server, struct bufferevent *bev, const Json
     int page = json_has_int(root, "page") ? json_int_or_default(root, "page", 1) : 1;
     int page_size = json_has_int(root, "page_size") ? json_int_or_default(root, "page_size", DEFAULT_PAGE_SIZE)
                                                     : DEFAULT_PAGE_SIZE;
-    const ServerRuntimeConfig &cfg = server_runtime_config();
     fill_music_service_reply_cmd(reply, cmd);
 
     if (page <= 0) {
@@ -447,7 +446,7 @@ bool reply_music_search_song(Server *server, struct bufferevent *bev, const Json
     trim_keyword(keyword);
     trim_keyword(platform);
     if (platform.empty()) {
-        platform = cfg.legacy_platform;
+        platform = "all";
     }
     music_remote_apply_source_hints(keyword, platform, platform);
     if (keyword.empty() || music_remote_keyword_is_vague(keyword)) {

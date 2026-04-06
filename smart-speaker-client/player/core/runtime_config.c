@@ -19,6 +19,7 @@ typedef struct {
     char player_mode[32];
     char gst_alsa_device[128];
     char music_search_source[16];
+    char device_id[64];
     int loaded;
 } PlayerRuntimeConfig;
 
@@ -55,6 +56,7 @@ static PlayerRuntimeConfig g_runtime_config = {
     .player_mode = "auto",
     .gst_alsa_device = GST_ALSA_DEVICE,
     .music_search_source = "auto",
+    .device_id = DEFAULT_DEVICE_ID,
     .loaded = 0,
 };
 
@@ -189,6 +191,9 @@ static void write_default_client_config_if_missing(void)
             "server_ip = \"%s\"\n"
             "server_port = %d\n"
             "\n"
+            "# 设备标识（TCP 上报）\n"
+            "device_id = \"%s\"\n"
+            "\n"
             "# 本地曲库根目录\n"
             "local_music_root = \"%s\"\n"
             "\n"
@@ -202,7 +207,7 @@ static void write_default_client_config_if_missing(void)
             "# 在线搜歌/歌单默认 source（语音未指定平台时）；可选：\n"
             "# tx/wy/kw/kg/mg 单源；auto 顺序（单次 HTTP 3s、全程≤10s）；all 并发（单次 HTTP 3s）\n"
             "music_search_source = \"auto\"\n",
-            SERVER_IP, SERVER_PORT, SDCARD_MOUNT_PATH,
+            SERVER_IP, SERVER_PORT, DEFAULT_DEVICE_ID, SDCARD_MOUNT_PATH,
             DEFAULT_VOLUME, "auto", GST_ALSA_DEVICE);
     fclose(fp);
 }
@@ -248,6 +253,11 @@ static void load_client_runtime_config(void)
             int port;
             if (parse_int_in_range(value, 1, 65535, &port) == 0) {
                 g_runtime_config.server_port = port;
+            }
+        } else if (strcmp(key, "device_id") == 0) {
+            unquote_text(value);
+            if (value[0] != '\0') {
+                copy_text(g_runtime_config.device_id, sizeof(g_runtime_config.device_id), value);
             }
         } else if (strcmp(key, "local_music_root") == 0) {
             unquote_text(value);
@@ -328,4 +338,10 @@ const char *player_runtime_music_search_source(void)
 {
     ensure_loaded();
     return g_runtime_config.music_search_source;
+}
+
+const char *player_runtime_device_id(void)
+{
+    ensure_loaded();
+    return g_runtime_config.device_id;
 }

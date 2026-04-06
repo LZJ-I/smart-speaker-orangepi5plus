@@ -6,6 +6,7 @@
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8888
+#define DEFAULT_DEVICE_ID "0001"
 #define MUSIC_PATH  UDISK_MOUNT_PATH
 
 #define GST_CMD_FIFO       "./fifo/cmd_fifo"

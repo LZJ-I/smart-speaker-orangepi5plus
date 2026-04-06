@@ -8,10 +8,11 @@
 #include <QTimer>
 #include <QJsonObject>
 #include <QJsonDocument>
+#include <QAbstractSocket>
 
 
-// #define IP  "10.102.178.47"  //虚拟机IP
-#define IP "39.102.121.199"     //阿里云IP
+// #define IP "39.102.121.199"     //阿里云IP
+#define IP "192.168.137.100"
 #define PORT 8888
 
 class Socket : public QObject
@@ -32,7 +33,8 @@ private:
     QTcpSocket::SocketState lastConnectState = QTcpSocket::UnconnectedState;  // 记录上一次 连接状态
 
 private slots:
-    void tryConnect();  // 每秒尝试连接的槽函数
+    void tryConnect();
+    void onTcpError(QAbstractSocket::SocketError e);
 
 signals:
     void readyRead();   // 自定义信号，转发QTcpSocket的readyRead

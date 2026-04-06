@@ -17,7 +17,6 @@
 #include "select.h"
 #include "socket.h"
 #include "shm.h"
-#include "main.h"
 #include "device.h"
 #include "link.h"
 #include "player.h"

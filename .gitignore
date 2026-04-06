@@ -28,3 +28,9 @@ vgcore.*
 
 # Runtime state (client/server 各自 data/；根目录若误建也忽略)
 data/
+
+# smart-speaker-server 测试可执行文件（make tests / make all）
+smart-speaker-server/tests/test_client
+smart-speaker-server/tests/test_app
+smart-speaker-server/test_client
+smart-speaker-server/test_app

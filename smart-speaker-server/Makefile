@@ -1,3 +1,4 @@
+CC ?= gcc
 CXX = g++
 INCLUDES = -Iinclude
 CXXFLAGS = -Wall -std=c++11 $(INCLUDES)
@@ -33,7 +34,7 @@ OBJS = $(SRCS:.cpp=.o)
 
 .PHONY: all clean tests stop music-lib
 
-all: $(TARGET)
+all: $(TARGET) tests
 
 music-lib:
 	cd music-lib && cargo build --release

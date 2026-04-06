@@ -4,7 +4,7 @@
 #include <sys/socket.h>
 #include "player.h"
 #include "shm.h"
-#include "main.h"
+#include "runtime_config.h"
 #include "device.h"
 #include <errno.h>
 #include <stdio.h>
@@ -58,7 +58,7 @@ static void* report_thread(void *arg)
         } else if (g_current_state == PLAY_STATE_PLAY && g_current_suspend == PLAY_SUSPEND_YES) {
             json_object_object_add(json, "state", json_object_new_string("suspend"));
         }
-        json_object_object_add(json, "deviceid", json_object_new_string(DEVICE_ID));
+        json_object_object_add(json, "deviceid", json_object_new_string(player_runtime_device_id()));
         json_object_object_add(json, "cur_volume", json_object_new_int(volume));
         if (socket_send_data(json) != 0) {
             break;

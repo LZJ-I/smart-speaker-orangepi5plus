@@ -63,7 +63,7 @@ void write_default_config_if_missing(void)
         << "# 本地曲库扫描根（相对 server 工作目录或绝对路径）\n"
         << "music_root = \"data/music-library/\"\n"
         << "\n"
-        << "# 兼容 Rust music-lib：未带 source 时默认平台；auto 顺序（单次 HTTP 3s、全程≤10s），all 并发（单次 HTTP 3s）\n"
+        << "# 兼容 Rust music-lib：未带 source 时默认平台；与 lx-music-desktop 一致：auto 单次 HTTP 15s、总≤75s；all 每源 limit=30 并发、15s、合并规则同 lx store/search/music\n"
         << "legacy_platform = \"auto\"\n"
         << "legacy_quality = \"320k\"\n"
         << "\n"

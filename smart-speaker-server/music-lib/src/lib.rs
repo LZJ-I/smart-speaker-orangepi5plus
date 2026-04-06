@@ -386,7 +386,7 @@ pub extern "C" fn music_search_first_url(
 /// 
 /// # 参数
 /// - keyword: 搜索关键词
-/// - platform: tx/wy/kw/kg/mg 单源；auto 顺序（单次 HTTP 3s、全程≤10s）；all 并发（单次 HTTP 3s）
+/// - platform: tx/wy/kw/kg/mg 单源；auto/all 与 lx-music-desktop 一致（单次 HTTP 15s 等）
 /// - result: 搜索结果输出指针
 /// 
 /// # 返回
@@ -426,7 +426,9 @@ pub extern "C" fn music_search_page(
     let total = search_ret.total as u32;
     let ret_page = search_ret.page;
     let ret_page_size = search_ret.page_size;
-    let total_pages = if ret_page_size == 0 {
+    let total_pages = if search_ret.max_page > 0 {
+        search_ret.max_page
+    } else if ret_page_size == 0 {
         0
     } else {
         ((total + ret_page_size - 1) / ret_page_size).max(1)

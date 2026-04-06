@@ -1,4 +1,6 @@
 #include "socket.h"
+#include <QtGlobal>
+#include <QDebug>
 
 // 初始化父类QObject
 Socket::Socket(QObject *parent) : QObject(parent)
@@ -7,8 +9,13 @@ Socket::Socket(QObject *parent) : QObject(parent)
     m_socket = new QTcpSocket(this);
     m_socket->connectToHost(QHostAddress(IP), PORT);
 
-    // 转发 tcpsocket readyRead信号
     connect(m_socket, &QTcpSocket::readyRead, this, &Socket::readyRead);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    connect(m_socket, &QAbstractSocket::errorOccurred, this, &Socket::onTcpError);
+#else
+    connect(m_socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error),
+            this, &Socket::onTcpError);
+#endif
 
     ConnectState = false;
 
@@ -46,11 +53,20 @@ void Socket::tryConnect()
         lastConnectState = currentState;  // 更新上一次状态
     }
 
-    // 处于未连接时，尝试重连
-    if (currentState != QTcpSocket::ConnectedState){
-        m_socket->abort();  // 终止无效连接
-        m_socket->connectToHost(QHostAddress(IP), PORT);
-    }
+    // 未连上时才重连；Connecting/HostLookup 中禁止 abort，否则每秒打断握手，永远连不上
+    if (currentState == QTcpSocket::ConnectedState)
+        return;
+    if (currentState == QTcpSocket::ConnectingState || currentState == QTcpSocket::HostLookupState)
+        return;
+    m_socket->abort();
+    m_socket->connectToHost(QHostAddress(IP), PORT);
+}
+
+void Socket::onTcpError(QAbstractSocket::SocketError)
+{
+    if (m_socket->state() == QAbstractSocket::ConnectedState)
+        return;
+    qWarning() << "TCP" << IP << PORT << m_socket->errorString();
 }
 
 void Socket::sendDisconnectedFromServer(void)

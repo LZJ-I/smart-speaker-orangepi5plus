@@ -140,13 +140,15 @@ function objStrToJson(text) {
   )
 }
 
+const HTTP_SEARCH_TIMEOUT_MS = 15000
+
 function requestText(urlString, options = {}, redirectCount = 0) {
   const payload = JSON.stringify({
     url: urlString,
     method: options.method || 'GET',
     headers: options.headers || {},
     body: options.body || '',
-    timeout_ms: options.timeout || 10000
+    timeout_ms: options.timeout || HTTP_SEARCH_TIMEOUT_MS
   })
   const pythonScript = [
     'import json, sys, urllib.request',
@@ -154,7 +156,7 @@ function requestText(urlString, options = {}, redirectCount = 0) {
     'body = req.get("body")',
     'data = body.encode("utf-8") if body else None',
     'request = urllib.request.Request(req["url"], data=data, headers=req.get("headers") or {}, method=req.get("method") or "GET")',
-    'with urllib.request.urlopen(request, timeout=max(float(req.get("timeout_ms", 10000)) / 1000.0, 1.0)) as resp:',
+    'with urllib.request.urlopen(request, timeout=max(float(req.get("timeout_ms", 15000)) / 1000.0, 1.0)) as resp:',
     '    text = resp.read().decode("utf-8", "ignore")',
     '    print(json.dumps({"statusCode": int(getattr(resp, "status", 0) or 0), "headers": dict(resp.headers), "text": text}))'
   ].join('\n')
@@ -162,7 +164,7 @@ function requestText(urlString, options = {}, redirectCount = 0) {
     try {
       const output = childProcess.execFileSync('python3', ['-c', pythonScript, payload], {
         encoding: 'utf8',
-        timeout: (options.timeout || 10000) + 5000,
+        timeout: (options.timeout || HTTP_SEARCH_TIMEOUT_MS) + 5000,
         maxBuffer: 8 * 1024 * 1024
       })
       resolve(JSON.parse(output))
@@ -260,6 +262,64 @@ function buildPlaylistItem(source, id, title, subtitle, cover, songCount) {
   }
 }
 
+function emptySongSearchPage(page, pageSize) {
+  const safePage = safeNumber(page, 1)
+  const safeSize = safeNumber(pageSize, 10)
+  return {
+    result: 'empty',
+    kind: 'song',
+    items: [],
+    page: safePage,
+    total: 0,
+    total_pages: 0
+  }
+}
+
+function withSearchTimeout(promise) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('search timeout')), HTTP_SEARCH_TIMEOUT_MS))
+  ])
+}
+
+function lxSimilar(a, b) {
+  if (!a || !b) return 0
+  let sa = String(a)
+  let sb = String(b)
+  if (sa.length > sb.length) {
+    const t = sb
+    sb = sa
+    sa = t
+  }
+  const al = sa.length
+  const bl = sb.length
+  if (!bl) return 0
+  const mp = new Array(bl + 1)
+  for (let i = 0; i <= bl; i++) mp[i] = i
+  for (let i = 1; i <= al; i++) {
+    const ai = sa.charCodeAt(i - 1)
+    let lt = mp[0]
+    mp[0] = mp[0] + 1
+    for (let j = 1; j <= bl; j++) {
+      const tmp = Math.min(mp[j] + 1, mp[j - 1] + 1, lt + (ai === sb.charCodeAt(j - 1) ? 0 : 1))
+      lt = mp[j]
+      mp[j] = tmp
+    }
+  }
+  return 1 - mp[bl] / bl
+}
+
+function lxSongIdKey(item) {
+  return `${item.source}_${item.id}`
+}
+
+function allPageNum(total, limit) {
+  const t = Number(total) || 0
+  const l = safeNumber(limit, 1)
+  if (!t || !l) return 0
+  return Math.ceil(t / l)
+}
+
 async function searchKwSongs(keyword, page, pageSize) {
   const safePage = safeNumber(page, 1)
   const safeSize = safeNumber(pageSize, 10)
@@ -274,7 +334,11 @@ async function searchKwSongs(keyword, page, pageSize) {
       '&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1&issubtitle=1'
     try {
       const { body } = await requestJson(searchUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 smart-speaker-music-service' }
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36'
+        },
+        timeout: HTTP_SEARCH_TIMEOUT_MS
       })
       const total = Number(body.TOTAL || 0)
       const show = body.SHOW != null ? String(body.SHOW) : '1'
@@ -336,8 +400,10 @@ async function searchWySongs(keyword, page, pageSize) {
   const { body } = await requestJson(url, {
     headers: {
       Referer: 'https://music.163.com/',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 smart-speaker-music-service'
-    }
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36'
+    },
+    timeout: HTTP_SEARCH_TIMEOUT_MS
   })
   const songs = body.result && Array.isArray(body.result.songs) ? body.result.songs : []
   const list = songs
@@ -483,7 +549,66 @@ const songSearchBySource = {
   wy: searchWySongs
 }
 
-async function searchSongs(keyword, page, pageSize, config) {
+async function searchSongsAggregated(keyword, page, pageSize) {
+  const safePage = safeNumber(page, 1)
+  const safeSize = safeNumber(pageSize, 10)
+  const LX_LIST_LIMIT = 30
+  const settled = await Promise.allSettled([
+    withSearchTimeout(searchKwSongs(keyword, safePage, LX_LIST_LIMIT)),
+    withSearchTimeout(searchWySongs(keyword, safePage, LX_LIST_LIMIT))
+  ])
+  let combined = []
+  let maxTotal = 0
+  let maxAllPage = 0
+  const addSource = (idx) => {
+    const s = settled[idx]
+    if (s.status !== 'fulfilled') return
+    const p = s.value
+    const t = Number(p.total) || 0
+    maxTotal = Math.max(maxTotal, t)
+    const ap = allPageNum(t, LX_LIST_LIMIT)
+    maxAllPage = Math.max(maxAllPage, ap)
+    if (ap < safePage) return
+    combined.push(...(p.items || []))
+  }
+  addSource(0)
+  addSource(1)
+  const seen = new Set()
+  combined = combined.filter((item) => {
+    const k = lxSongIdKey(item)
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+  const scored = combined.map((item, i) => ({
+    i,
+    item,
+    score: lxSimilar(keyword, `${item.title} ${item.subtitle}`)
+  }))
+  scored.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.i - b.i))
+  const merged = scored.map((x) => x.item)
+  if (merged.length === 0) {
+    return emptySongSearchPage(safePage, safeSize)
+  }
+  return {
+    result: 'ok',
+    kind: 'song',
+    items: merged,
+    page: safePage,
+    total: maxTotal,
+    total_pages: maxAllPage
+  }
+}
+
+async function searchSongs(keyword, page, pageSize, config, sourceHint) {
+  const hint = String(sourceHint || '').trim().toLowerCase()
+  if (!hint || hint === 'all') {
+    return searchSongsAggregated(keyword, page, pageSize)
+  }
+  const direct = songSearchBySource[hint]
+  if (direct) {
+    return direct(keyword, page, pageSize)
+  }
   const sources =
     config.searchSources && config.searchSources.length > 0 ? config.searchSources : [config.defaultSource]
   let lastError = null
@@ -678,7 +803,8 @@ function createServer() {
         const keyword = String(body.keyword || '').trim()
         const page = safeNumber(body.page, 1)
         const pageSize = safeNumber(body.page_size, 10)
-        const result = await searchSongs(keyword, page, pageSize, config)
+        const sourceHint = String(body.source || '').trim()
+        const result = await searchSongs(keyword, page, pageSize, config, sourceHint)
         logListPreview('search.song', keyword, result.result, result.items)
         return json(res, 200, result)
       }
@@ -766,3 +892,4 @@ module.exports = {
   readConfig,
   parseLxSourceScript
 }
+

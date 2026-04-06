@@ -8,5 +8,6 @@ int player_runtime_startup_volume(void);
 const char *player_runtime_player_mode(void);
 const char *player_runtime_gst_alsa_device(void);
 const char *player_runtime_music_search_source(void);
+const char *player_runtime_device_id(void);
 
 #endif

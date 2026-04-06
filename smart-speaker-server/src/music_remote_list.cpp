@@ -272,7 +272,6 @@ bool music_remote_list_music_page(const std::string &keyword, int page, int page
     std::string kw = keyword;
     std::string plat;
     const ServerRuntimeConfig &rt = server_runtime_config();
-    const std::string &env_pl_str = rt.legacy_platform;
 
     memset(&res, 0, sizeof(res));
     if (page <= 0 || page_size <= 0 || keyword.empty()) {
@@ -282,8 +281,8 @@ bool music_remote_list_music_page(const std::string &keyword, int page, int page
         return false;
     }
 
-    plat = env_pl_str;
-    music_remote_apply_source_hints(kw, plat, env_pl_str);
+    plat = "all";
+    music_remote_apply_source_hints(kw, plat, "all");
     if (kw.empty()) {
         return false;
     }
