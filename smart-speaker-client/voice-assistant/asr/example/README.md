@@ -1,6 +1,8 @@
 # ASR 示例程序
 
-本目录包含基于 Sherpa-onnx 的 ASR（自动语音识别）示例程序。主流程中 `voice-assistant/main_asr_kws` 会链接本模块，识别结果或超时通过 asr_fifo 交给 player；详见 [smart-speaker-client/README.md](../../../README.md)。
+> 部署与模型见 [smart-speaker-client/README.md](../../../README.md)。
+
+本目录包含基于 Sherpa-onnx 的 ASR（自动语音识别）示例程序。主流程中 `voice-assistant/main_asr_kws` 会链接本模块，识别结果或超时通过 asr_fifo 交给 player。
 
 ## 功能特性
 

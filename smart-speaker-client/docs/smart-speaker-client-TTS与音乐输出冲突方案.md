@@ -1,5 +1,7 @@
 # TTS 与音乐输出冲突方案
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 问题
 
 TTS（语音播报）与 音乐播放 共用 3.5mm 声卡（rockchipes8388）。若一方使用 `hw:3,0` 直连，会独占设备，另一方打开时报 “Device or resource busy”。

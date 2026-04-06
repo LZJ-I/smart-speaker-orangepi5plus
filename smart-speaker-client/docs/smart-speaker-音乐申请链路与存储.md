@@ -1,5 +1,7 @@
 # 音乐：申请链路与存储说明
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 本文描述 **smart-speaker-client（player）** 与 **smart-speaker-server（C++ + music-service Node + music-lib Rust）** 之间，针对**歌曲 / 歌单 / 歌手**（及泛化「列表 + 取播放 URL」）的请求路径与数据落点。实现以当前代码为准。
 
 ---

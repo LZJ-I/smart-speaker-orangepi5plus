@@ -1,5 +1,7 @@
 # smart-speaker-client 语音链路状态机与恢复播放方案
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 目标
 
 - 唤醒时若音乐正在播放，先打断再进入语音交互。

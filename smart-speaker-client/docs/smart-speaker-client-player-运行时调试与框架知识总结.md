@@ -1,5 +1,7 @@
 # smart-speaker-client player 运行时调试与框架知识总结
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 1. 本次确认的系统框架
 
 - 语音链路：`KWS -> ASR -> Player(select.c) -> 规则匹配 -> (命中执行 | 未命中LLM) -> TTS`

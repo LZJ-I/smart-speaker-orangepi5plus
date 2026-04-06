@@ -1,5 +1,7 @@
 # player 规则匹配示例清单
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 播放控制类
 
 - `开始播放`、`播放音乐`、`开始` -> `RULE_CMD_PLAY_START`

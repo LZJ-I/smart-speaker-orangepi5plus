@@ -1,5 +1,7 @@
 # smart-speaker-client 目录框架重构规范
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 目标
 
 - 模块边界清晰：识别、控制、播放、第三方依赖解耦。

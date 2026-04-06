@@ -1,5 +1,7 @@
 # smart-speaker-client player 三进程播放与分页状态机技术基线
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 1. 目标与范围
 
 本文档定义 `smart-speaker-client/player` 的当前技术基线，覆盖以下内容：

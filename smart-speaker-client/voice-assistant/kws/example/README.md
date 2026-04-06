@@ -1,6 +1,8 @@
 # KWS 示例程序
 
-本目录包含基于 Sherpa-onnx 的 KWS（关键词检测）示例程序。主流程中 `voice-assistant/main_asr_kws` 会链接本模块，实现唤醒后进入 ASR、超时写哨兵等逻辑；详见项目根目录 [README.md](../../../README.md)。
+> 部署与模型见 [smart-speaker-client/README.md](../../../README.md)。
+
+本目录包含基于 Sherpa-onnx 的 KWS（关键词检测）示例程序。主流程中 `voice-assistant/main_asr_kws` 会链接本模块，实现唤醒后进入 ASR、超时写哨兵等逻辑。
 
 ## 功能特性
 

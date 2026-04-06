@@ -2,20 +2,29 @@
 
 ![客户端模块（霓虹赛博）](../readme-illustrations/neon-client-focus.svg)
 
-智能音箱客户端，当前拆成 `player`、`voice-assistant`、`supervisor`、`ipc`、`tools`、`assets`、`docs`；运行期配置与日志在 **`data/`**（已 `.gitignore`，见 `player/core/runtime_config.c`）。
+板端智能音箱：本地或服务端曲库播放、语音唤醒与播报；可与仓库内 **smart-speaker-server**、**smart-speaker-qtApp** 组成同一套应用。
 
-## 目录
+## 应用做什么
 
-### 仓库结构
+- **播放**：本地目录（U 盘/SD）或服务端下发的列表与在线解析 URL。
+- **语音**：ASR/KWS/TTS（及可选 LLM）与播放状态协同。
+- **进程**：`supervisor` 拉起子进程，`player` 负责播放主循环与规则处理。
 
-- `player/`：播放控制、规则匹配、音乐源后端（实现分布在 `core/`、`net/`、`select_loop/`、`device/`、`rules/`、`bridge/`、`music_source/`）
-- `player/music_source/`：本地曲库后端、server 曲库后端、统一路由
-- `voice-assistant/`：ASR/KWS/TTS/LLM
-- `supervisor/`：拉起与守护子进程
-- `ipc/`：二进制 IPC
-- `tools/`：调试工具
-- `assets/`：**预合成语音等**，默认不纳入 Git，Fork 克隆后须本地生成（见下「assets 资源」）
-- `docs/`：技术说明与索引
+## 部署提要
+
+1. 安装下文「生产环境依赖」中的系统包。
+2. 新克隆须生成 `assets`（下节「assets 资源」）。
+3. 全量语音能力须按「模型下载」放置 `3rdparty` 与模型。
+4. `make -C player` 可先做最小验证；完整能力用 `make`。
+5. 在 `player/` 执行 `./init.sh` 后 `./run`（或顶层 `make run`）；首次运行生成 **`data/config/client.toml`**。
+6. 联机前先部署并启动服务端，再在 `client.toml` 填写 `server_ip` / `server_port`。
+
+## 实现组成（目录）
+
+- `player/`：播放、规则、本地/服务端曲库对接。
+- `voice-assistant/`：ASR、KWS、TTS、LLM。
+- `supervisor/`、`ipc/`、`tools/`、`docs/`：守护、进程间通信、脚本与说明文档。
+- 运行期配置与日志在 **`data/`**（已 `.gitignore`，首次运行自动创建）。
 
 ### assets 资源（Fork / 新克隆必读）
 
@@ -26,20 +35,6 @@
 ```
 
 脚本会编译并调用 `voice-assistant/tts/example/tts_test` 的批量模式写入 WAV，需已按「模型下载」准备好 `3rdparty` 与 TTS 模型。说明详见 `voice-assistant/tts/example/README.md`。
-
-### 本文档章节索引
-
-1. 生产环境依赖（请先安装）
-2. 本地最小可运行
-3. 完整构建
-4. 运行
-5. 运行时配置（player，`data/config/client.toml`）
-6. 可选环境变量（调试与其它）
-7. 环境变量（ASR / KWS 录音设备）
-8. 音乐源
-9. Server 联调
-10. 模型下载
-11. 文档
 
 ## 生产环境依赖（请先安装）
 
@@ -319,6 +314,6 @@ smart-speaker-client/
                 └── vocos-16khz-univ.onnx   # 以及 matcha 包内其余文件
 ```
 
-## 文档
+## 更多文档
 
-- [docs/smart-speaker-client-技术文档索引.md](docs/smart-speaker-client-技术文档索引.md)
+- [docs/smart-speaker-client-文档索引.md](docs/smart-speaker-client-文档索引.md)

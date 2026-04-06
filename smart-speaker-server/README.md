@@ -2,15 +2,28 @@
 
 ![服务端枢纽（霓虹赛博）](../readme-illustrations/neon-server-focus.svg)
 
-TCP 服务端：设备/APP 转发、账号（MySQL）、本地曲库磁盘扫描、`music-lib`（Rust）与 `music-service`（Node）在线解析。
+本目录是智能音箱的**服务端**：设备与桌面端经此转发与登记；维护账号；扫描本地曲库；在配置就绪时提供在线搜歌与取链。板端客户端见 **`smart-speaker-client`**，桌面控制端见 **`smart-speaker-qtApp`**。
 
-## 目录
+## 应用做什么
 
-- `include/`、`src/`：C++ TCP 服务
-- `music-lib/`：Rust `music_downloader`，产出 `libmusic_downloader.so`（`list_music` 带关键词时的远程搜索/首条取链等）
-- `music-service/`：Node HTTP 子服务（`index.js`，部分 `app_*` 与解析反代）
-- `tests/`：联调小程序（可用环境变量指定连测地址）
-- `docs/`：`接口定义.txt` 等
+- 接收板端/APP 的 TCP 长连与业务 JSON，转发状态与列表。
+- 账号数据在 MySQL；本地音乐在磁盘目录（`server.toml` 中的 `music_root`）。
+- 在线能力依赖首次运行生成的 **`data/config/*.toml`**（洛雪脚本或直填 API；Node 子进程由服务拉起或协同）。
+
+## 部署提要
+
+1. 安装下文「依赖」中的包；本机安装 MySQL/MariaDB 并建库建用户。
+2. `make` 编译（会顺带构建 Rust `music-lib`）。
+3. 首次 `./server_smart_speaker` 前确保 `music_runtime_init` 所需脚本或 API 配置已就绪，否则进程会直接退出（终端有提示）。
+4. 曲库音频建议 `歌手名/歌曲文件` 两级目录，便于列表展示；仅平铺在根目录时部分字段可能为空。
+5. 与板端联调时，在板端 `client.toml` 填写本机 `bind_ip`/`bind_port`。
+
+## 实现组成（目录）
+
+- 主服务：`include/`、`src/`（TCP 与业务逻辑）。
+- `music-lib/`：远程搜索与取链动态库，由主服务加载。
+- `music-service/`：Node 小服务，与主服务配置联动。
+- `tests/`：联调小程序；`docs/`：接口与链路说明（**`接口定义.txt`**、**`音乐链路协议说明.md`**）。
 
 ## 依赖（开发）
 
@@ -90,10 +103,6 @@ make stop   # 可按环境变量 SMART_SPEAKER_SERVER_PORT 杀占用端口（默
 
 日志：标准输出与 **`data/server/app.log`**（`app_log_init`）。
 
-## 协议要点
+## 与客户端的约定
 
-TCP：4 字节小端长度 + UTF-8 JSON。字段与示例见 **`docs/接口定义.txt`**；实现以 `src/server.cpp` 为准。
-
-- **`list_music`**：无关键词或泛意图 → 本地随机分页缓存；有关键词且 Rust 侧 `music_api_configured()` → `music_remote_list.cpp` 远程分页，**仅第一条**填 `play_url`，其余由客户端 `get_play_url` 等补链；API 未就绪时回退本地关键词或空结果。
-- **`get_play_url` / `resolve_music`**：与 Rust/Node 组合实现相关，未就绪时返回 `disabled`/`fail`。
-- **`search_music`**：仅扫 `music_root` 下本地路径。
+报文格式与字段说明见 **`docs/接口定义.txt`**；多端队列与状态含义见 **`docs/音乐链路协议说明.md`**。实现以当前 `src/` 为准。

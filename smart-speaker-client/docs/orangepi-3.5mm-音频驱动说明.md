@@ -1,5 +1,7 @@
 # OrangePi 3.5mm 音频驱动说明
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 本次处理结论
 
 - 已检查 `/boot/orangepiEnv.txt` 与当前系统音频设备列表。

@@ -1,5 +1,7 @@
 # SD卡加载与卸载实操示例
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 编译
 
 - `make -C player/example`

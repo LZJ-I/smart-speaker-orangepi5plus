@@ -1,5 +1,7 @@
 # player 离线在线切换与兜底策略
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 离线/在线切换
 
 - 在线切离线：`player_switch_offline_mode()`

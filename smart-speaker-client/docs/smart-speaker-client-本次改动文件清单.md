@@ -1,5 +1,7 @@
 # smart-speaker-client 本次改动文件清单
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 当前模块划分（分文件拆分后）
 
 与下文「近期改动」「代码改动」对应的实现，部分已拆到独立文件，路径对应关系如下：
@@ -91,7 +93,7 @@
 - `docs/smart-speaker-client-目录框架重构规范.md`
 - `docs/smart-speaker-client-本次改动文件清单.md`
 - `docs/smart-speaker-client-全量重构实施记录.md`
-- `docs/smart-speaker-client-技术文档索引.md`
+- `docs/smart-speaker-client-文档索引.md`（原技术文档索引已合并为按用途分类的索引）
 
 ## 后续计划中待落地
 

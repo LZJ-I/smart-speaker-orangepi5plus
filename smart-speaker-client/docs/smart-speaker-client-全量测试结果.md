@@ -1,5 +1,7 @@
 # smart-speaker-client 全量测试结果
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 测试范围
 
 本次测试覆盖：

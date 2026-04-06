@@ -1,5 +1,7 @@
 # smart-speaker-client 框架重构说明
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 **说明**：本文描述的是计划中的 framework 公共层与目录调整方案，**当前代码库未按此全文落地**。`player` 已拆为 `core/`、`net/`、`select_loop/`、`device/`、`rules/`、`bridge/`、`music_source/` 等，详见 `docs/smart-speaker-client-目录框架重构规范.md`。
 
 ---

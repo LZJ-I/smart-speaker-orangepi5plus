@@ -1,5 +1,7 @@
 # smart-speaker-client 全量重构实施记录
 
+> 部署与日常运行见 [README.md](../README.md)。
+
 ## 本轮完成项
 
 - 播放器技术基线文档：

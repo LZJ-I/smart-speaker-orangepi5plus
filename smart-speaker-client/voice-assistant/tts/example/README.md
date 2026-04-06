@@ -1,5 +1,7 @@
 # TTS 示例程序
 
+> 模型路径与 `3rdparty` 准备见 [smart-speaker-client/README.md](../../../README.md)；批量生成板端 `assets/tts` 用上级 `tools/gen_mode_tts_wav.sh`。
+
 本目录包含基于 Sherpa-onnx 的 TTS（文本到语音）和 WAV 播放示例程序。
 
 ## 功能特性
