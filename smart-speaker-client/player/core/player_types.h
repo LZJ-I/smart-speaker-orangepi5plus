@@ -32,6 +32,8 @@ enum {
 
 typedef struct {
     char keyword[256];
+    char playlist_id[128];
+    char playlist_source[32];
     int current_page;
     int total_pages;
     int page_size;

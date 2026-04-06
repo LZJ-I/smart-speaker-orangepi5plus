@@ -78,6 +78,31 @@ static void mas_publish_or_drop(uint32_t job_tok, music_async_out_t out, const M
     mas_notify_write();
 }
 
+void music_server_async_cancel_pending(void)
+{
+    char drain[256];
+    ssize_t n;
+
+    pthread_mutex_lock(&g_mas_mu);
+    g_latest_token++;
+    if ((g_pending_out == MUSIC_ASYNC_OK_SEARCH || g_pending_out == MUSIC_ASYNC_OK_PLAYLIST) &&
+        g_pending_search.items != NULL) {
+        music_source_free_result(&g_pending_search);
+    }
+    memset(&g_pending_search, 0, sizeof(g_pending_search));
+    g_pending_out = MUSIC_ASYNC_FAIL;
+    memset(&g_pending_item, 0, sizeof(g_pending_item));
+    g_query[0] = '\0';
+    g_source[0] = '\0';
+    pthread_mutex_unlock(&g_mas_mu);
+
+    if (g_mas_pipe[0] < 0) {
+        return;
+    }
+    while ((n = read(g_mas_pipe[0], drain, sizeof(drain))) > 0) {
+    }
+}
+
 static void *mas_play_query_thread(void *arg)
 {
     MasJob *job = (MasJob *)arg;

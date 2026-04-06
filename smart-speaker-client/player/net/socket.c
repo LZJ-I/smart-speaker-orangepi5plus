@@ -25,6 +25,7 @@
 #include "runtime_config.h"
 #include "socket_report.h"
 #include "music_source_server.h"
+#include "music_server_async.h"
 
 #define TAG "SOCKET"
 
@@ -102,6 +103,7 @@ static void socket_handle_disconnect(void)
     if (g_socket_fd < 0) {
         return;
     }
+    music_server_async_cancel_pending();
     socket_close_connection();
     if (player_env_forces_offline()) {
         return;
@@ -610,6 +612,7 @@ void socket_play_playlist(const char *json_buf)
     struct json_object *reply;
     int i;
     int ok = 0;
+    int total_pages = 1;
 
     if (json_buf == NULL) {
         return;
@@ -626,9 +629,12 @@ void socket_play_playlist(const char *json_buf)
     source = socket_json_optional_string(jo, "source");
     playlist_id = socket_json_optional_string(jo, "id");
     if (playlist_id != NULL && playlist_id[0] != '\0' &&
-        music_source_server_load_playlist_detail(playlist_id, source, &result) == 0 && result.count > 0) {
+        music_source_server_load_playlist_detail_page(playlist_id, source, 1,
+            PLAYER_ONLINE_PLAYLIST_PAGE_SIZE, &result) == 0 &&
+        result.count > 0) {
         link_clear_list();
         ok = 1;
+        total_pages = result.total_pages > 0 ? result.total_pages : 1;
         for (i = 0; i < result.count; ++i) {
             const MusicSourceItem *it = &result.items[i];
             if (link_add_music_lib(it->source, it->song_id, it->singer, it->song_name,
@@ -637,16 +643,53 @@ void socket_play_playlist(const char *json_buf)
                 break;
             }
         }
+        music_source_free_result(&result);
         if (ok) {
+            player_set_playlist_ctx_for_playlist(playlist_id, source, total_pages);
+            player_jump_to_first_queued_song();
             player_stop_play();
             player_start_play();
             socket_upload_music_list();
         }
+    } else {
+        music_source_free_result(&result);
     }
-    music_source_free_result(&result);
     json_object_put(jo);
     reply = json_object_new_object();
     json_object_object_add(reply, "cmd", json_object_new_string("reply_app_play_playlist"));
+    json_object_object_add(reply, "result", json_object_new_string(ok ? "success" : "failure"));
+    socket_send_data(reply);
+}
+
+void socket_insert_play_song(const char *json_buf)
+{
+    struct json_object *jo;
+    const char *source;
+    const char *song_id;
+    const char *title;
+    const char *subtitle;
+    int ok;
+    struct json_object *reply;
+
+    if (json_buf == NULL) {
+        return;
+    }
+    jo = json_tokener_parse(json_buf);
+    if (jo == NULL) {
+        reply = json_object_new_object();
+        json_object_object_add(reply, "cmd", json_object_new_string("reply_app_insert_play_song"));
+        json_object_object_add(reply, "result", json_object_new_string("failure"));
+        socket_send_data(reply);
+        return;
+    }
+    source = socket_json_optional_string(jo, "source");
+    song_id = socket_json_optional_string(jo, "id");
+    title = socket_json_optional_string(jo, "title");
+    subtitle = socket_json_optional_string(jo, "subtitle");
+    ok = (player_insert_song_and_play(source, song_id, title, subtitle) == 0);
+    json_object_put(jo);
+    reply = json_object_new_object();
+    json_object_object_add(reply, "cmd", json_object_new_string("reply_app_insert_play_song"));
     json_object_object_add(reply, "result", json_object_new_string(ok ? "success" : "failure"));
     socket_send_data(reply);
 }

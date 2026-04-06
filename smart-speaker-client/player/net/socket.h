@@ -48,6 +48,7 @@ void socket_set_single_mode();
 void socket_upload_music_list();
 void socket_play_assign_song(const char *json_buf);
 void socket_play_playlist(const char *json_buf);
+void socket_insert_play_song(const char *json_buf);
 void socket_playlist_page_next(void);
 void socket_playlist_page_prev(void);
 

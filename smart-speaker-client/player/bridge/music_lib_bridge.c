@@ -7,6 +7,7 @@
 #include "player.h"
 #include "music_source.h"
 #include "music_source_manager.h"
+#include "music_source_server.h"
 #include "player_constants.h"
 
 #define TAG "MUSIC-LIB"
@@ -100,6 +101,41 @@ int music_lib_search_fill_list_page(const char *keyword, int page, int page_size
     if (total_pages != NULL) *total_pages = 0;
     if (filled_count != NULL) *filled_count = 0;
     if (music_source_search(keyword, page, page_size, &result) != 0) {
+        return -1;
+    }
+    link_clear_list();
+    for (i = 0; i < result.count; ++i) {
+        if (link_add_music_lib(result.items[i].source,
+                               result.items[i].song_id,
+                               result.items[i].singer,
+                               result.items[i].song_name,
+                               (result.items[i].play_url[0] != '\0') ? result.items[i].play_url : NULL) != 0) {
+            music_source_free_result(&result);
+            return -1;
+        }
+    }
+    if (total_pages != NULL) {
+        *total_pages = result.total_pages;
+    }
+    if (filled_count != NULL) {
+        *filled_count = result.count;
+    }
+    music_source_free_result(&result);
+    return 0;
+}
+
+int music_lib_playlist_fill_list_page(const char *playlist_id, const char *source,
+                                      int page, int page_size, int *total_pages, int *filled_count)
+{
+    MusicSourceResult result;
+    int i;
+    if (playlist_id == NULL || playlist_id[0] == '\0' || page <= 0 || page_size <= 0) {
+        return -1;
+    }
+    memset(&result, 0, sizeof(result));
+    if (total_pages != NULL) *total_pages = 0;
+    if (filled_count != NULL) *filled_count = 0;
+    if (music_source_server_load_playlist_detail_page(playlist_id, source, page, page_size, &result) != 0) {
         return -1;
     }
     link_clear_list();

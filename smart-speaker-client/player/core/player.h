@@ -26,6 +26,7 @@ extern int g_tts_fd;
 extern int g_player_ctrl_fd;
 
 void player_start_play();
+void player_jump_to_first_queued_song(void);
 void player_stop_play(void);
 void player_continue_play();
 void player_suspend_play();
@@ -55,6 +56,9 @@ int player_prepare_keyword_playlist(const char *keyword, int auto_start);
 int player_playlist_load_next_page(void);
 int player_playlist_load_prev_page(void);
 void player_get_playlist_ctx(player_playlist_ctx_t *out_ctx);
+void player_reset_playlist_ctx_for_loaded_list(void);
+void player_set_playlist_ctx_for_playlist(const char *playlist_id, const char *source, int total_pages);
+int player_insert_song_and_play(const char *source, const char *song_id, const char *title, const char *subtitle);
 void player_handle_playlist_eof(int sig);
 void player_handle_sigchld(int sig);
 void player_process_async_events(void);

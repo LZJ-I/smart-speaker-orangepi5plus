@@ -536,10 +536,10 @@ void player_stop_play(void)
     g_eof_autostart_suppressed = 1;
     shm_get(&s);
     cpid = s.child_pid;
+    stop_active_grandchild(1);
     if (pid_is_alive(cpid)) {
         kill(cpid, SIGUSR1);
     }
-    stop_active_grandchild(1);
     if (pid_is_alive(cpid)) {
         if (!wait_pid_exit(cpid, 500, NULL)) {
             kill(cpid, SIGTERM);
@@ -555,6 +555,7 @@ void player_stop_play(void)
     s.child_pid = 0;
     s.grand_pid = 0;
     shm_set(&s);
+    player_cmd_fifo_close();
 }
 
 void player_continue_play()
@@ -617,20 +618,30 @@ int player_voice_cmd_followup_pending(void)
     return g_voice_cmd_followup_expected != 0;
 }
 
+static int playlist_ctx_fill_page(int page, int *total_pages, int *filled_count)
+{
+    if (g_playlist_ctx.playlist_id[0] != '\0') {
+        return music_lib_playlist_fill_list_page(
+            g_playlist_ctx.playlist_id, g_playlist_ctx.playlist_source,
+            page, g_playlist_ctx.page_size, total_pages, filled_count);
+    }
+    const char *search_kw = (g_playlist_ctx.keyword[0] != '\0')
+                                ? g_playlist_ctx.keyword
+                                : player_default_recommend_keyword();
+    return music_lib_search_fill_list_page(search_kw, page, g_playlist_ctx.page_size,
+                                           total_pages, filled_count);
+}
+
 int player_playlist_load_next_page(void)
 {
     int total_pages = 0;
     int filled_count = 0;
     int next_page;
     int tries = 0;
-    const char *search_kw = (g_playlist_ctx.keyword[0] != '\0')
-                                ? g_playlist_ctx.keyword
-                                : player_default_recommend_keyword();
     next_page = g_playlist_ctx.current_page + 1;
     if (g_playlist_ctx.total_pages > 0 && next_page > g_playlist_ctx.total_pages) next_page = 1;
     while (tries < (g_playlist_ctx.total_pages > 0 ? g_playlist_ctx.total_pages : 3)) {
-        if (music_lib_search_fill_list_page(search_kw, next_page, g_playlist_ctx.page_size,
-                                            &total_pages, &filled_count) == 0 &&
+        if (playlist_ctx_fill_page(next_page, &total_pages, &filled_count) == 0 &&
             filled_count > 0) {
             Music_Node first_song;
             Shm_Data s;
@@ -660,16 +671,12 @@ int player_playlist_load_prev_page(void)
     int filled_count = 0;
     int prev_page;
     int tries = 0;
-    const char *search_kw = (g_playlist_ctx.keyword[0] != '\0')
-                                ? g_playlist_ctx.keyword
-                                : player_default_recommend_keyword();
     prev_page = g_playlist_ctx.current_page - 1;
     if (g_playlist_ctx.total_pages > 0 && prev_page < 1) {
         prev_page = g_playlist_ctx.total_pages;
     }
     while (tries < (g_playlist_ctx.total_pages > 0 ? g_playlist_ctx.total_pages : 3)) {
-        if (music_lib_search_fill_list_page(search_kw, prev_page, g_playlist_ctx.page_size,
-                                            &total_pages, &filled_count) == 0 &&
+        if (playlist_ctx_fill_page(prev_page, &total_pages, &filled_count) == 0 &&
             filled_count > 0) {
             Music_Node first_song;
             Shm_Data s;
@@ -701,6 +708,8 @@ int player_prepare_keyword_playlist(const char *keyword, int auto_start)
     int filled_count = 0;
     char normalized[sizeof(g_playlist_ctx.keyword)];
     copy_text(normalized, sizeof(normalized), (keyword != NULL) ? keyword : "");
+    g_playlist_ctx.playlist_id[0] = '\0';
+    g_playlist_ctx.playlist_source[0] = '\0';
     if (strcmp(normalized, g_playlist_ctx.keyword) != 0) {
         copy_text(g_playlist_ctx.keyword, sizeof(g_playlist_ctx.keyword), normalized);
         g_playlist_ctx.current_page = 1;
@@ -1045,6 +1054,30 @@ int player_prev_song()
     return 0;
 }
 
+static int player_is_already_playing_track(const Music_Node *picked)
+{
+    Shm_Data s;
+
+    if (picked == NULL || picked->song_id[0] == '\0') {
+        return 0;
+    }
+    if (g_current_state != PLAY_STATE_PLAY || g_current_suspend != PLAY_SUSPEND_NO) {
+        return 0;
+    }
+    shm_get(&s);
+    if (!pid_is_alive(s.child_pid)) {
+        return 0;
+    }
+    if (strcmp(s.current_song_id, picked->song_id) != 0) {
+        return 0;
+    }
+    if (picked->source[0] != '\0' && s.current_source[0] != '\0' &&
+        strcmp(s.current_source, picked->source) != 0) {
+        return 0;
+    }
+    return 1;
+}
+
 static int player_switch_to_picked_song(const Music_Node *picked)
 {
     Shm_Data s;
@@ -1052,6 +1085,9 @@ static int player_switch_to_picked_song(const Music_Node *picked)
 
     if (picked == NULL || picked->song_name[0] == '\0' || picked->song_id[0] == '\0') {
         return -1;
+    }
+    if (player_is_already_playing_track(picked)) {
+        return 0;
     }
     was_stopped = (g_current_state == PLAY_STATE_STOP);
     shm_get(&s);
@@ -1147,6 +1183,50 @@ int player_play_assign_or_insert_song(const char *source, const char *song_id, c
     return 0;
 }
 
+int player_insert_song_and_play(const char *source, const char *song_id, const char *title, const char *subtitle)
+{
+    MusicSourceItem item;
+    Music_Node existing;
+    if (g_current_online_mode != ONLINE_MODE_YES ||
+        source == NULL || source[0] == '\0' ||
+        song_id == NULL || song_id[0] == '\0') {
+        return -1;
+    }
+    memset(&existing, 0, sizeof(existing));
+    if (link_get_music_by_source_id(source, song_id, &existing) == 0) {
+        return player_switch_to_picked_song(&existing);
+    }
+    memset(&item, 0, sizeof(item));
+    copy_text(item.source, sizeof(item.source), source);
+    copy_text(item.id, sizeof(item.id), song_id);
+    copy_text(item.song_id, sizeof(item.song_id), song_id);
+    copy_text(item.title, sizeof(item.title), (title != NULL) ? title : "");
+    copy_text(item.song_name, sizeof(item.song_name), item.title);
+    copy_text(item.subtitle, sizeof(item.subtitle), (subtitle != NULL) ? subtitle : "");
+    copy_text(item.singer, sizeof(item.singer), item.subtitle);
+    if (music_lib_resolve_insert_item_after_current(&item) != 0) {
+        return -1;
+    }
+    if (player_voice_intro_shm_after_insert(NULL, "", 0) != 0) {
+        return -1;
+    }
+    player_voice_intro_commit_insert_play();
+    return 0;
+}
+
+void player_jump_to_first_queued_song(void)
+{
+    Music_Node first;
+    Shm_Data s;
+
+    if (link_get_first_music(&first) != 0) {
+        return;
+    }
+    shm_get(&s);
+    update_shm_current_song(&s, &first);
+    shm_set(&s);
+}
+
 void player_set_mode(int mode)
 {
     Shm_Data s;
@@ -1162,6 +1242,26 @@ void player_get_playlist_ctx(player_playlist_ctx_t *out_ctx)
 {
     if (out_ctx == NULL) return;
     *out_ctx = g_playlist_ctx;
+}
+
+void player_reset_playlist_ctx_for_loaded_list(void)
+{
+    g_playlist_ctx.keyword[0] = '\0';
+    g_playlist_ctx.playlist_id[0] = '\0';
+    g_playlist_ctx.playlist_source[0] = '\0';
+    g_playlist_ctx.current_page = 1;
+    g_playlist_ctx.total_pages = 1;
+}
+
+void player_set_playlist_ctx_for_playlist(const char *playlist_id, const char *source, int total_pages)
+{
+    g_playlist_ctx.keyword[0] = '\0';
+    copy_text(g_playlist_ctx.playlist_id, sizeof(g_playlist_ctx.playlist_id),
+              (playlist_id != NULL) ? playlist_id : "");
+    copy_text(g_playlist_ctx.playlist_source, sizeof(g_playlist_ctx.playlist_source),
+              (source != NULL) ? source : "");
+    g_playlist_ctx.current_page = 1;
+    g_playlist_ctx.total_pages = (total_pages > 0) ? total_pages : 1;
 }
 
 static void player_eof_wrap_or_restart(void)
@@ -1374,7 +1474,6 @@ int player_offline_init_storage_and_library(int reset_player)
 {
     if (reset_player) {
         player_stop_play();
-        (void)player_write_fifo("quit\n");
         usleep(500000);
     }
     if (player_ensure_sdcard_mounted() != 0) {

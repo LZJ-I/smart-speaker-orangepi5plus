@@ -39,7 +39,7 @@
 
 #define SOCKET_JSON_BUF_MAX (512 * 1024)
 
-/* 在线歌单仅驻留一页：与 Node 歌单详情单次条数上限接近，减少翻页 HTTP 次数 */
+/* 在线列表 / 歌单详情分页条数（与 Node paginate 一致） */
 #define PLAYER_ONLINE_PLAYLIST_PAGE_SIZE 30
 
 #endif

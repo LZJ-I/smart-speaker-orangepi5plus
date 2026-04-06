@@ -604,6 +604,8 @@ void select_read_socket(void)
         socket_play_assign_song(buf);
     } else if (strcmp(cmd, "app_play_playlist") == 0) {
         socket_play_playlist(buf);
+    } else if (strcmp(cmd, "app_insert_play_song") == 0) {
+        socket_insert_play_song(buf);
     } else if (strcmp(cmd, "app_playlist_next_page") == 0) {
         socket_playlist_page_next();
     } else if (strcmp(cmd, "app_playlist_prev_page") == 0) {

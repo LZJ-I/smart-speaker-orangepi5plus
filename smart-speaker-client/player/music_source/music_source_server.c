@@ -672,6 +672,78 @@ int music_source_server_load_playlist_detail(const char *playlist_id, const char
     return music_source_server_playlist_detail(playlist_id, source, out_result);
 }
 
+int music_source_server_load_playlist_detail_page(const char *playlist_id, const char *source,
+                                                   int page, int page_size, MusicSourceResult *out_result)
+{
+    int fd;
+    int ret = -1;
+    char *payload = NULL;
+    json_object *request = NULL;
+    json_object *root = NULL;
+    json_object *music = NULL;
+    json_object *value = NULL;
+    int i;
+
+    if (playlist_id == NULL || playlist_id[0] == '\0' || out_result == NULL) {
+        return -1;
+    }
+    server_result_reset(out_result);
+    fd = server_connect_once();
+    if (fd < 0) return -1;
+
+    request = json_object_new_object();
+    json_object_object_add(request, "cmd", json_object_new_string("music.playlist.detail"));
+    json_object_object_add(request, "id", json_object_new_string(playlist_id));
+    if (source != NULL && source[0] != '\0') {
+        json_object_object_add(request, "source", json_object_new_string(source));
+    }
+    json_object_object_add(request, "page", json_object_new_int(page));
+    json_object_object_add(request, "page_size", json_object_new_int(page_size));
+    if (server_send_request(fd, request) != 0) goto done;
+    if (server_recv_response(fd, &payload) != 0) goto done;
+
+    root = json_tokener_parse(payload);
+    if (root == NULL) goto done;
+    if (!json_object_object_get_ex(root, "result", &value) ||
+        strcmp(json_object_get_string(value), "ok") != 0) {
+        ret = 0;
+        goto done;
+    }
+    if (json_object_object_get_ex(root, "total_pages", &value)) {
+        out_result->total_pages = json_object_get_int(value);
+    }
+    if (json_object_object_get_ex(root, "total", &value)) {
+        out_result->total = json_object_get_int(value);
+    }
+    out_result->current_page = page;
+
+    if (!json_object_object_get_ex(root, "items", &music) || !json_object_is_type(music, json_type_array)) {
+        ret = 0;
+        goto done;
+    }
+    out_result->count = json_object_array_length(music);
+    if (out_result->count > 0) {
+        out_result->items = (MusicSourceItem *)calloc((size_t)out_result->count, sizeof(MusicSourceItem));
+        if (out_result->items == NULL) goto done;
+        for (i = 0; i < out_result->count; ++i) {
+            if (music_source_server_parse_music_item(json_object_array_get_idx(music, i), &out_result->items[i]) != 0) {
+                free(out_result->items);
+                out_result->items = NULL;
+                out_result->count = 0;
+                goto done;
+            }
+        }
+    }
+    ret = 0;
+
+done:
+    if (request != NULL) json_object_put(request);
+    if (root != NULL) json_object_put(root);
+    free(payload);
+    close(fd);
+    return ret;
+}
+
 const MusicSourceBackend *music_source_server_backend(void)
 {
     static const MusicSourceBackend backend = {
