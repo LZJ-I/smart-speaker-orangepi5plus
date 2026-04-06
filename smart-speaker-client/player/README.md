@@ -39,6 +39,8 @@ make -C player
 
 ## 预生成 TTS 提示音（`assets/tts/*.wav`）
 
+`assets/` 已列入客户端根目录 `.gitignore`，Fork 克隆后须本地生成（与仓库根 `README.md`「assets 资源」一致）。
+
 播放器会**直接播文件**（经 TTS 进程 `IPC_CMD_PLAY_AUDIO_FILE`），不经过在线合成。以下路径相对 **`smart-speaker-client` 工程根目录**：
 
 - 模式/连接/兜底：`mode_order.wav`、`mode_single.wav`、`mode_online.wav`、`fallback_unmatched.wav`、`online_music_unsupported.wav`、`server_disconnect_offline.wav`、`server_connect_failed.wav`

@@ -22,9 +22,16 @@ int main(void)
             continue;
         }
         if (result.matched) {
-            printf("matched=1 cmd=%s action=%s\n",
-                   rule_cmd_to_string(result.cmd),
-                   result.action_desc);
+            if (result.cmd == RULE_CMD_VOL_SET && result.vol_set_target >= 0) {
+                printf("matched=1 cmd=%s action=%s vol_set=%d\n",
+                       rule_cmd_to_string(result.cmd),
+                       result.action_desc,
+                       result.vol_set_target);
+            } else {
+                printf("matched=1 cmd=%s action=%s\n",
+                       rule_cmd_to_string(result.cmd),
+                       result.action_desc);
+            }
         } else {
             printf("matched=0 cmd=%s action=%s\n",
                    rule_cmd_to_string(result.cmd),

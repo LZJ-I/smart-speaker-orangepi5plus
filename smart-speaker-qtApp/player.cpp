@@ -306,6 +306,7 @@ void Player::player_device_report_handler(QJsonObject& root)
     const int currentIndex = root[QStringLiteral("current_index")].toInt(-1);
     m_currentSource = root[QStringLiteral("current_source")].toString();
     m_currentSongId = root[QStringLiteral("current_song_id")].toString();
+    m_currentSinger = root[QStringLiteral("cur_singer")].toString();
     m_playlistVersion = reportPlaylistVersion;
 
     if (m_get_music_flag) {
@@ -600,20 +601,31 @@ int Player::getMusicListCount()
 
 void Player::syncCurrentTrackSelection(int currentIndex)
 {
-    if (currentIndex >= 0) {
+    const int count = ui->music_listWidget->count();
+    if (currentIndex >= 0 && currentIndex < count) {
         setMusicItemSelectedAndBold(currentIndex);
         return;
     }
-    if (!m_currentSongId.isEmpty()) {
-        const int count = ui->music_listWidget->count();
-        for (int i = 0; i < count; ++i) {
-            QListWidgetItem *item = ui->music_listWidget->item(i);
-            if (!item) continue;
-            if (item->data(MusicIdRole).toString() == m_currentSongId &&
-                item->data(MusicSourceRole).toString() == m_currentSource) {
-                setMusicItemSelectedAndBold(i);
-                return;
-            }
+    if (m_currentSongId.isEmpty())
+        return;
+    int fallback = -1;
+    for (int i = 0; i < count; ++i) {
+        QListWidgetItem *item = ui->music_listWidget->item(i);
+        if (!item) continue;
+        if (item->data(MusicIdRole).toString() != m_currentSongId)
+            continue;
+        const bool srcOk = m_currentSource.isEmpty() ||
+            item->data(MusicSourceRole).toString() == m_currentSource;
+        if (!srcOk)
+            continue;
+        if (!m_currentSinger.isEmpty() &&
+            item->data(MusicSubtitleRole).toString() == m_currentSinger) {
+            setMusicItemSelectedAndBold(i);
+            return;
         }
+        if (fallback < 0)
+            fallback = i;
     }
+    if (fallback >= 0)
+        setMusicItemSelectedAndBold(fallback);
 }

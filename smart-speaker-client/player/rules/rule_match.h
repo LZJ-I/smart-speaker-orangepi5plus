@@ -10,6 +10,7 @@ typedef enum {
     RULE_CMD_PREV,               // 上一首
     RULE_CMD_VOL_DOWN,           // 音量减小
     RULE_CMD_VOL_UP,             // 音量增大
+    RULE_CMD_VOL_SET,            // 设置音量到指定值（如「设置音量到50」）
     RULE_CMD_MODE_SINGLE,        // 单曲循环
     RULE_CMD_MODE_ORDER,        // 顺序播放
     RULE_CMD_PLAY_START,         // 开始播放
@@ -24,6 +25,7 @@ typedef struct {
     int matched;
     rule_cmd_t cmd;
     const char *action_desc;
+    int vol_set_target;          /* RULE_CMD_VOL_SET：0～100；其余命令为 -1 */
 } rule_match_result_t;
 
 int rule_match_text(const char *text, rule_match_result_t *result);

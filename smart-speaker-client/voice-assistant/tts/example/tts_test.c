@@ -22,6 +22,7 @@ typedef struct {
     const char* text;
     const char* output_file;
     const char* alsa_device;
+    const char* batch_file;
 } TTSConfig;
 
 int g_running = 1;
@@ -148,6 +149,7 @@ void print_usage(const char* program_name) {
     printf("  -t, --text <文本>    要合成的文本\n");
     printf("  -o, --output <文件>  输出文件 (默认: generated.wav)\n");
     printf("  -d, --device <设备>  ALSA设备 (使用 aplay -l 查看)\n");
+    printf("  -b, --batch <文件>   批量合成：每行「输出路径<TAB>文本」，# 开头与空行忽略\n");
     printf("  -h, --help          显示帮助信息\n");
     printf("\n示例:\n");
     printf("  %s                                      # 使用默认设置\n", program_name);
@@ -170,9 +172,83 @@ int parse_args(int argc, char* argv[], TTSConfig* config) {
             config->output_file = argv[++i];
         } else if ((strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--device") == 0) && i + 1 < argc) {
             config->alsa_device = argv[++i];
+        } else if ((strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--batch") == 0) && i + 1 < argc) {
+            config->batch_file = argv[++i];
         }
     }
     return 0;
+}
+
+static void trim_crlf(char *s)
+{
+    size_t n = strlen(s);
+    while (n > 0 && (s[n - 1] == '\n' || s[n - 1] == '\r')) {
+        s[--n] = '\0';
+    }
+}
+
+static char *trim_leading(char *s)
+{
+    while (*s == ' ' || *s == '\t') {
+        ++s;
+    }
+    return s;
+}
+
+static void trim_trailing(char *s)
+{
+    size_t n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t')) {
+        s[--n] = '\0';
+    }
+}
+
+static int run_batch_synthesize(const char *batch_path)
+{
+    FILE *fp = fopen(batch_path, "r");
+    char line[4096];
+    int line_no = 0;
+    int ok = 0;
+    int fail = 0;
+
+    if (fp == NULL) {
+        LOGE(TAG, "无法打开批量清单: %s", strerror(errno));
+        return -1;
+    }
+    while (fgets(line, (int)sizeof(line), fp) != NULL) {
+        char *tab;
+        char *outpath;
+        char *text;
+        ++line_no;
+        trim_crlf(line);
+        if (line[0] == '\0' || line[0] == '#') {
+            continue;
+        }
+        tab = strchr(line, '\t');
+        if (tab == NULL) {
+            LOGW(TAG, "第 %d 行缺少制表符分隔，已跳过", line_no);
+            ++fail;
+            continue;
+        }
+        *tab = '\0';
+        outpath = trim_leading(line);
+        trim_trailing(outpath);
+        text = trim_leading(tab + 1);
+        trim_trailing(text);
+        if (outpath[0] == '\0' || text[0] == '\0') {
+            LOGW(TAG, "第 %d 行路径或文本为空，已跳过", line_no);
+            ++fail;
+            continue;
+        }
+        if (generate_tts_audio(text, outpath) != 0) {
+            ++fail;
+        } else {
+            ++ok;
+        }
+    }
+    fclose(fp);
+    LOGI(TAG, "批量合成结束：成功 %d，失败 %d", ok, fail);
+    return fail > 0 ? -1 : 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -180,7 +256,8 @@ int main(int argc, char* argv[]) {
         .mode = MODE_SINGLE_FILE,
         .text = "你好，这是一个智能音箱测试。今天天气不错，适合出去走走。",
         .output_file = "generated.wav",
-        .alsa_device = NULL
+        .alsa_device = NULL,
+        .batch_file = NULL
     };
     
     g_config = &config;
@@ -197,41 +274,56 @@ int main(int argc, char* argv[]) {
     }
     
     LOGI(TAG, "======== TTS测试程序启动 ========");
+
+    if (config.batch_file != NULL) {
+        int result;
+        LOGI(TAG, "批量模式，清单: %s", config.batch_file);
+        if (init_sherpa_tts() != 0) {
+            LOGE(TAG, "TTS模型初始化失败");
+            return -1;
+        }
+        g_sample_rate = g_tts_sample_rate;
+        result = run_batch_synthesize(config.batch_file);
+        cleanup_sherpa_tts();
+        LOGI(TAG, "======== TTS测试程序退出 ========");
+        return result;
+    }
+
     print_config(&config);
-    
+
     if (init_sherpa_tts() != 0) {
         LOGE(TAG, "TTS模型初始化失败");
         return -1;
     }
     g_sample_rate = g_tts_sample_rate;
     LOGI(TAG, "TTS模型加载完成，采样率: %d Hz", g_sample_rate);
-    
+
     if (init_output(&config) != 0) {
         cleanup_sherpa_tts();
         return -1;
     }
-    
+
     clock_gettime(CLOCK_MONOTONIC, &g_start_time);
-    
+
     LOGI(TAG, "开始生成音频...");
-    
+
     int result = 0;
     float* samples = NULL;
     int32_t n = 0;
     uint32_t sr = 0;
-    
+
     result = generate_tts_audio_full(config.text, &samples, &n, &sr);
-    
+
     if (result == 0 && samples != NULL) {
         struct timespec end_time;
         clock_gettime(CLOCK_MONOTONIC, &end_time);
-        double elapsed = (end_time.tv_sec - g_start_time.tv_sec) + 
+        double elapsed = (end_time.tv_sec - g_start_time.tv_sec) +
                         (end_time.tv_nsec - g_start_time.tv_nsec) / 1e9;
         LOGI(TAG, ">>> 完整音频生成完成！耗时: %.3f 秒 <<<", elapsed);
-        
+
         int16_t* pcm_data = (int16_t*)malloc(n * sizeof(int16_t));
         convert_to_pcm(samples, pcm_data, n);
-        
+
         if (config.mode == MODE_SINGLE_ALSA) {
             LOGI(TAG, "正在播放...");
             play_audio(pcm_data, n);
@@ -242,27 +334,27 @@ int main(int argc, char* argv[]) {
                 write_wav_header(file, sr, n * 2);
                 fwrite(pcm_data, sizeof(int16_t), n, file);
                 fclose(file);
-                LOGI(TAG, "音频已保存到: %s，总计: %d 样本 (%.2f 秒)", 
+                LOGI(TAG, "音频已保存到: %s，总计: %d 样本 (%.2f 秒)",
                        config.output_file, n, (float)n / sr);
             } else {
                 LOGE(TAG, "无法打开输出文件: %s", strerror(errno));
                 result = -1;
             }
         }
-        
+
         free(pcm_data);
         destroy_generated_audio(samples);
     }
-    
+
     if (result != 0) {
         LOGE(TAG, "音频生成失败");
     } else {
         LOGI(TAG, "音频生成完成！");
     }
-    
+
     cleanup_output();
     cleanup_sherpa_tts();
-    
+
     LOGI(TAG, "======== TTS测试程序退出 ========");
     return result;
 }

@@ -32,20 +32,86 @@ static const char *FALLBACK_WAV_PATH = "./assets/tts/fallback_unmatched.wav";
 static const char *MODE_ORDER_WAV_PATH = "./assets/tts/mode_order.wav";
 static const char *MODE_SINGLE_WAV_PATH = "./assets/tts/mode_single.wav";
 
-static void tts_play_noop_reply_random(void)
+static const char *const VOICE_PAUSE_WAVS[] = {
+    "./assets/tts/voice_pause_1.wav",
+    "./assets/tts/voice_pause_2.wav",
+    "./assets/tts/voice_pause_3.wav",
+    "./assets/tts/voice_pause_4.wav",
+};
+static const char *const VOICE_STOP_WAVS[] = {
+    "./assets/tts/voice_stop_1.wav",
+    "./assets/tts/voice_stop_2.wav",
+    "./assets/tts/voice_stop_3.wav",
+    "./assets/tts/voice_stop_4.wav",
+};
+
+static void ensure_rand_seeded(void)
 {
     static int seeded;
-    static const char *const paths[] = {
-        NOOP_REPLY_RECALL_WAV,
-        NOOP_REPLY_LEAVE_WAV,
-        NOOP_REPLY_OK_WAV,
-    };
     if (!seeded) {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
         srand((unsigned)(ts.tv_sec ^ ts.tv_nsec ^ (unsigned)getpid()));
         seeded = 1;
     }
+}
+
+static void tts_play_pause_reply_random(void)
+{
+    ensure_rand_seeded();
+    tts_play_audio_file(VOICE_PAUSE_WAVS[rand() % (int)(sizeof(VOICE_PAUSE_WAVS) / sizeof(VOICE_PAUSE_WAVS[0]))]);
+}
+
+static void tts_play_stop_reply_random(void)
+{
+    ensure_rand_seeded();
+    tts_play_audio_file(VOICE_STOP_WAVS[rand() % (int)(sizeof(VOICE_STOP_WAVS) / sizeof(VOICE_STOP_WAVS[0]))]);
+}
+
+/* kind: -1 减小, 1 增大, 0 绝对设置 */
+static void tts_play_volume_feedback(int kind)
+{
+    int v = 0;
+    char msg[160];
+    int r;
+    static const char *const fmt_down[] = {
+        "好的，当前音量为%d。",
+        "已经减小音量到%d啦。",
+        "小声一点啦，现在是%d哦。",
+    };
+    static const char *const fmt_up[] = {
+        "好的，当前音量为%d。",
+        "已经增大音量到%d啦。",
+        "大声一点啦，现在是%d哦。",
+    };
+    static const char *const fmt_set[] = {
+        "好的，当前音量为%d。",
+        "音量已经调到%d啦。",
+        "收到，现在是%d哦。",
+    };
+    if (device_get_volume(&v) != 0) {
+        return;
+    }
+    ensure_rand_seeded();
+    r = rand() % 3;
+    if (kind < 0) {
+        snprintf(msg, sizeof(msg), fmt_down[r], v);
+    } else if (kind > 0) {
+        snprintf(msg, sizeof(msg), fmt_up[r], v);
+    } else {
+        snprintf(msg, sizeof(msg), fmt_set[r], v);
+    }
+    tts_play_text(msg);
+}
+
+static void tts_play_noop_reply_random(void)
+{
+    static const char *const paths[] = {
+        NOOP_REPLY_RECALL_WAV,
+        NOOP_REPLY_LEAVE_WAV,
+        NOOP_REPLY_OK_WAV,
+    };
+    ensure_rand_seeded();
     tts_play_audio_file(paths[rand() % 3]);
 }
 
@@ -255,10 +321,12 @@ static void select_read_asr(void)
     switch (match_result.cmd) {
     case RULE_CMD_STOP:
         player_stop_play();
+        tts_play_stop_reply_random();
         break;
     case RULE_CMD_PAUSE:
         player_audio_focus_cancel_resume();
         player_suspend_play();
+        tts_play_pause_reply_random();
         break;
     case RULE_CMD_RESUME:
         player_audio_focus_cancel_resume();
@@ -271,11 +339,22 @@ static void select_read_asr(void)
         player_prev_song();
         break;
     case RULE_CMD_VOL_DOWN:
-        device_adjust_volume(0);
+        if (device_adjust_volume(0) == 0) {
+            tts_play_volume_feedback(-1);
+        }
         resume_after_handle = had_music_before_wakeup;
         break;
     case RULE_CMD_VOL_UP:
-        device_adjust_volume(1);
+        if (device_adjust_volume(1) == 0) {
+            tts_play_volume_feedback(1);
+        }
+        resume_after_handle = had_music_before_wakeup;
+        break;
+    case RULE_CMD_VOL_SET:
+        if (match_result.vol_set_target >= 0 && match_result.vol_set_target <= 100 &&
+            device_set_volume(match_result.vol_set_target) == 0) {
+            tts_play_volume_feedback(0);
+        }
         resume_after_handle = had_music_before_wakeup;
         break;
     case RULE_CMD_MODE_SINGLE:

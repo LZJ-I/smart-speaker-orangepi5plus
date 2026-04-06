@@ -5,6 +5,7 @@
 ## 功能特性
 
 - 支持两种输出模式的 TTS 合成
+- **批量模式（`-b`）**：只加载一次模型，按清单连续合成多条，适合批量生成 `assets/tts` 提示音
 - 支持 ALSA 音频设备输出
 - 支持 WAV 文件输出
 - 命令行参数配置
@@ -39,6 +40,7 @@ make
 | `--text` | `-t` | 预设文本 | 要合成的文本 |
 | `--output` | `-o` | generated.wav | 输出 WAV 文件名 |
 | `--device` | `-d` | - | ALSA 音频设备 (使用 aplay -l 查看) |
+| `--batch` | `-b` | - | 批量合成清单文件路径（与 `-t`/`-o` 互斥） |
 | `--help` | `-h` | - | 显示帮助信息 |
 
 ### 使用示例
@@ -61,9 +63,30 @@ make
 ./tts_test -t "你好世界，这是一段测试语音。" -o output.wav
 ```
 
-#### 4. 生成智能音箱模式切换提示音（项目内使用）
+#### 4. 批量合成（推荐用于多条固定文案）
 
-项目根目录下执行 `tools/gen_mode_tts_wav.sh` 会调用本目录的 `tts_test` 生成 `assets/tts/mode_order.wav`、`assets/tts/mode_single.wav`（「已切换到顺序播放模式」「已切换到单曲循环模式」）。
+在**本目录**下执行（模型路径相对 `voice-assistant/tts/example` 解析）。清单为 UTF-8 文本文件：
+
+- 每行一条：`输出 WAV 绝对路径` + **制表符（Tab）** + `合成文本`
+- 空行、以 `#` 开头的行忽略
+- 程序**只初始化 / 释放 TTS 一次**，避免每条文案都重复加载模型
+
+```bash
+# 示例 manifest.txt（路径请按实际修改）
+# /path/to/out.wav<TAB>要说的字
+printf '%s\t%s\n' /tmp/a.wav "第一句" /tmp/b.wav "第二句" > /tmp/manifest.txt
+./tts_test -b /tmp/manifest.txt
+```
+
+#### 5. 生成智能音箱预合成提示音（项目内使用）
+
+在仓库 `smart-speaker-client` 根目录执行：
+
+```bash
+./tools/gen_mode_tts_wav.sh
+```
+
+脚本会编译 `tts_test`、写入临时批量清单并调用 **`./tts_test -b <清单>`**，一次性生成 `assets/tts/` 下模式切换、兜底、暂停/停止随机句等全部 WAV（详见脚本内 `add_line` 列表）。
 
 ## play_wav 使用说明
 

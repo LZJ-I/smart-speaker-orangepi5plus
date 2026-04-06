@@ -1,5 +1,7 @@
 #include "rule_match.h"
+#include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "select_text.h"
 
 typedef int (*rule_match_fn)(const char *text);
@@ -134,6 +136,40 @@ static int match_vol_up(const char *text)
     static const char *const k2[] = {"音量", "声音", NULL};
     static const char *const k3[] = {"太小", "有点小", "大点", "大一点", "调大", NULL};
     return (has_any(text, k1) && has_any(text, k2)) || (has_any(text, k2) && has_any(text, k3));
+}
+
+static int match_vol_set_percent(const char *text, int *out_pct)
+{
+    const char *p = NULL;
+    char *end = NULL;
+    long v;
+    const char *ba = strstr(text, "把音量设置到");
+    const char *she = strstr(text, "设置音量到");
+    if (ba != NULL && (she == NULL || ba <= she)) {
+        p = ba + strlen("把音量设置到");
+    } else if (she != NULL) {
+        p = she + strlen("设置音量到");
+    } else {
+        return 0;
+    }
+    while (*p == ' ' || *p == '\t') {
+        ++p;
+    }
+    if (*p == '\0' || !isdigit((unsigned char)*p)) {
+        return 0;
+    }
+    v = strtol(p, &end, 10);
+    if (end == p) {
+        return 0;
+    }
+    if (v < 0) {
+        v = 0;
+    }
+    if (v > 100) {
+        v = 100;
+    }
+    *out_pct = (int)v;
+    return 1;
 }
 
 static int match_mode_single(const char *text)
@@ -309,8 +345,19 @@ int rule_match_text(const char *text, rule_match_result_t *result)
     result->matched = 0;
     result->cmd = RULE_CMD_NONE;
     result->action_desc = "未命中";
+    result->vol_set_target = -1;
     if (text == NULL || text[0] == '\0') {
         return 0;
+    }
+    {
+        int pct = 0;
+        if (match_vol_set_percent(text, &pct)) {
+            result->matched = 1;
+            result->cmd = RULE_CMD_VOL_SET;
+            result->action_desc = "设置音量";
+            result->vol_set_target = pct;
+            return 0;
+        }
     }
     for (i = 0; i < sizeof(k_rules) / sizeof(k_rules[0]); ++i) {
         if (k_rules[i].match_fn(text)) {
@@ -333,6 +380,7 @@ const char *rule_cmd_to_string(rule_cmd_t cmd)
     case RULE_CMD_PREV: return "RULE_CMD_PREV";
     case RULE_CMD_VOL_DOWN: return "RULE_CMD_VOL_DOWN";
     case RULE_CMD_VOL_UP: return "RULE_CMD_VOL_UP";
+    case RULE_CMD_VOL_SET: return "RULE_CMD_VOL_SET";
     case RULE_CMD_MODE_SINGLE: return "RULE_CMD_MODE_SINGLE";
     case RULE_CMD_MODE_ORDER: return "RULE_CMD_MODE_ORDER";
     case RULE_CMD_PLAY_PLAYLIST: return "RULE_CMD_PLAY_PLAYLIST";

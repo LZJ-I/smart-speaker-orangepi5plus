@@ -30,6 +30,7 @@ private:
     QString m_state;
     QString m_currentSource;
     QString m_currentSongId;
+    QString m_currentSinger;
     QButtonGroup *m_tabGroup;
 
     void player_device_report_handler(QJsonObject& root);

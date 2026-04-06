@@ -196,24 +196,6 @@ static void copy_node_value(Music_Node *dst, const Music_Node *src)
     safe_copy(dst->play_url, sizeof(dst->play_url), src->play_url);
 }
 
-static int node_matches_identity(const Music_Node *node, const char *source, const char *song_id)
-{
-    const char *node_id;
-
-    if (node == NULL || song_id == NULL || song_id[0] == '\0') {
-        return 0;
-    }
-    node_id = node->id[0] != '\0' ? node->id : node->song_id;
-    if (strcmp(node_id, song_id) != 0) {
-        return 0;
-    }
-    if (source != NULL && source[0] != '\0' &&
-        node->source[0] != '\0' && strcmp(node->source, source) != 0) {
-        return 0;
-    }
-    return 1;
-}
-
 static void format_display_name(const Music_Node *node, char *buf, size_t buf_size)
 {
     const char *title;
@@ -533,16 +515,21 @@ int link_get_music_at(int index, Music_Node *out)
 
 int link_get_current_index(const char *source, const char *song_id)
 {
+    Music_Node *target;
     Music_Node *current;
     int current_index;
 
     if (g_music_head == NULL || song_id == NULL || song_id[0] == '\0') {
         return -1;
     }
+    target = find_by_identity(source, song_id);
+    if (target == NULL) {
+        return -1;
+    }
     current = g_music_head->next;
     current_index = 0;
     while (current != NULL) {
-        if (node_matches_identity(current, source, song_id)) {
+        if (current == target) {
             return current_index;
         }
         current = current->next;

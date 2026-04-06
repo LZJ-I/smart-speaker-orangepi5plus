@@ -14,8 +14,18 @@
 - `supervisor/`：拉起与守护子进程
 - `ipc/`：二进制 IPC
 - `tools/`：调试工具
-- `assets/`：静态资源（如 TTS 等）
+- `assets/`：**预合成语音等**，默认不纳入 Git，Fork 克隆后须本地生成（见下「assets 资源」）
 - `docs/`：技术说明与索引
+
+### assets 资源（Fork / 新克隆必读）
+
+目录 `assets/`（含 `assets/tts/*.wav`）已在 `.gitignore` 中忽略，减轻仓库体积；拉代码后请在 **`smart-speaker-client` 根目录**执行：
+
+```bash
+./tools/gen_mode_tts_wav.sh
+```
+
+脚本会编译并调用 `voice-assistant/tts/example/tts_test` 的批量模式写入 WAV，需已按「模型下载」准备好 `3rdparty` 与 TTS 模型。说明详见 `voice-assistant/tts/example/README.md`。
 
 ### 本文档章节索引
 
