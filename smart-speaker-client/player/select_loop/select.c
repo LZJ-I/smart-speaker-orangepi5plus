@@ -68,8 +68,8 @@ static void tts_play_stop_reply_random(void)
     tts_play_audio_file(VOICE_STOP_WAVS[rand() % (int)(sizeof(VOICE_STOP_WAVS) / sizeof(VOICE_STOP_WAVS[0]))]);
 }
 
-/* kind: -1 减小, 1 增大, 0 绝对设置 */
-static void tts_play_volume_feedback(int kind)
+/* kind: -1 减小, 1 增大, 0 绝对设置；返回 0 表示已下发 TTS 文本 */
+static int tts_play_volume_feedback(int kind)
 {
     int v = 0;
     char msg[160];
@@ -90,7 +90,7 @@ static void tts_play_volume_feedback(int kind)
         "收到，现在是%d哦。",
     };
     if (device_get_volume(&v) != 0) {
-        return;
+        return -1;
     }
     ensure_rand_seeded();
     r = rand() % 3;
@@ -101,7 +101,7 @@ static void tts_play_volume_feedback(int kind)
     } else {
         snprintf(msg, sizeof(msg), fmt_set[r], v);
     }
-    tts_play_text(msg);
+    return tts_play_text(msg);
 }
 
 static void tts_play_noop_reply_random(void)
@@ -237,41 +237,41 @@ void update_max_fd() {
     }
 }
 
-// 语音合成：xxx
-void tts_play_text(char * text)
+int tts_play_text(const char *text)
 {
     if (text == NULL || text[0] == '\0') {
-        return;
+        return -1;
     }
     if (ensure_tts_fifo_ready() != 0) {
         LOGW(TAG, "tts管道未打开，跳过播报");
-        return;
+        return -1;
     }
-    // 写入管道
     if (ipc_send_message(g_tts_fd, IPC_CMD_PLAY_TEXT, text, (uint32_t)(strlen(text) + 1), &g_tts_seq) != 0)
     {
         LOGE(TAG, "写入tts管道失败: %s", strerror(errno));
-        return;
+        return -1;
     }
     LOGI(TAG, "写入tts管道：%s", text);
+    return 0;
 }
 
-void tts_play_audio_file(const char *path)
+int tts_play_audio_file(const char *path)
 {
     if (path == NULL || path[0] == '\0') {
-        return;
+        return -1;
     }
     if (ensure_tts_fifo_ready() != 0) {
         LOGW(TAG, "tts管道未打开，跳过音频文件播报");
-        return;
+        return -1;
     }
     if (ipc_send_message(g_tts_fd, IPC_CMD_PLAY_AUDIO_FILE, (const uint8_t *)path,
                          (uint32_t)(strlen(path) + 1), &g_tts_seq) != 0)
     {
         LOGE(TAG, "写入tts音频文件命令失败: %s", strerror(errno));
-        return;
+        return -1;
     }
     LOGI(TAG, "写入tts音频文件命令：%s", path);
+    return 0;
 }
 
 // 处理asr管道事件
@@ -307,6 +307,7 @@ static void select_read_asr(void)
 
     rule_match_result_t match_result;
     int resume_after_handle = 0;
+    int defer_music_resume_until_tts_done = 0;
     int had_music_before_wakeup = player_audio_focus_should_resume();
     int match_ret = rule_match_text(buf, &match_result);
     if (match_ret != 0) {
@@ -340,31 +341,41 @@ static void select_read_asr(void)
         break;
     case RULE_CMD_VOL_DOWN:
         if (device_adjust_volume(0) == 0) {
-            tts_play_volume_feedback(-1);
+            if (tts_play_volume_feedback(-1) == 0) {
+                defer_music_resume_until_tts_done = 1;
+            }
         }
         resume_after_handle = had_music_before_wakeup;
         break;
     case RULE_CMD_VOL_UP:
         if (device_adjust_volume(1) == 0) {
-            tts_play_volume_feedback(1);
+            if (tts_play_volume_feedback(1) == 0) {
+                defer_music_resume_until_tts_done = 1;
+            }
         }
         resume_after_handle = had_music_before_wakeup;
         break;
     case RULE_CMD_VOL_SET:
         if (match_result.vol_set_target >= 0 && match_result.vol_set_target <= 100 &&
             device_set_volume(match_result.vol_set_target) == 0) {
-            tts_play_volume_feedback(0);
+            if (tts_play_volume_feedback(0) == 0) {
+                defer_music_resume_until_tts_done = 1;
+            }
         }
         resume_after_handle = had_music_before_wakeup;
         break;
     case RULE_CMD_MODE_SINGLE:
         player_set_mode(SINGLE_PLAY);
-        tts_play_audio_file(MODE_SINGLE_WAV_PATH);
+        if (tts_play_audio_file(MODE_SINGLE_WAV_PATH) == 0) {
+            defer_music_resume_until_tts_done = 1;
+        }
         resume_after_handle = had_music_before_wakeup;
         break;
     case RULE_CMD_MODE_ORDER:
         player_set_mode(ORDER_PLAY);
-        tts_play_audio_file(MODE_ORDER_WAV_PATH);
+        if (tts_play_audio_file(MODE_ORDER_WAV_PATH) == 0) {
+            defer_music_resume_until_tts_done = 1;
+        }
         resume_after_handle = had_music_before_wakeup;
         break;
     case RULE_CMD_PLAY_START:
@@ -419,10 +430,12 @@ static void select_read_asr(void)
         break;
     }
 
-    if (resume_after_handle)
-    {
+    if (resume_after_handle) {
+        player_voice_cmd_clear_followup();
         player_audio_focus_prepare_resume();
-        player_continue_play();
+        if (!defer_music_resume_until_tts_done) {
+            player_continue_play();
+        }
     }
 }
 

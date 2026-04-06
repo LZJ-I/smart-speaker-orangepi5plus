@@ -18,7 +18,7 @@ void select_run();
 void select_on_player_stopped(void);
 
 
-// 语音合成：xxx
-void tts_play_text(char * text);
-void tts_play_audio_file(const char *path);
+/* 返回 0 表示已成功写入 TTS 管道（将收到 tts:start / tts:done） */
+int tts_play_text(const char *text);
+int tts_play_audio_file(const char *path);
 #endif
