@@ -575,6 +575,9 @@ int link_get_next_music(const char *cur_source, const char *cur_song_id, int mod
     }
     target_node = find_by_identity(cur_source, cur_song_id);
     if (target_node == NULL) {
+        if (g_current_online_mode == ONLINE_MODE_YES) {
+            return -1;
+        }
         target_node = g_music_head->next;
     }
 
