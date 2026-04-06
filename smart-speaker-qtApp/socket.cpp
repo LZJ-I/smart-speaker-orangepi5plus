@@ -1,6 +1,7 @@
 #include "socket.h"
 #include <QtGlobal>
 #include <QDebug>
+#include <cstring>
 
 // 初始化父类QObject
 Socket::Socket(QObject *parent) : QObject(parent)
@@ -45,10 +46,28 @@ void Socket::tryConnect()
             ConnectState = true;
             QMessageBox::information(nullptr, "连接提示", "已成功连接服务器");
         }else if (lastConnectState == QTcpSocket::ConnectedState){
-            // 从“已连接”→“非连接”（掉线）
             ConnectState = false;
-            QMessageBox::information(nullptr, "连接提示", "服务器出小差了，正在尝试重新连接服务器\n将返回登录界面");
-            emit disconnectedFromServer(); // 发射掉线信号
+            const bool playerAlreadyNotified = m_disconnectDueToDeviceClient;
+            m_disconnectDueToDeviceClient = false;
+            bool deviceClientOff = playerAlreadyNotified;
+            if (!deviceClientOff) {
+                QJsonObject r;
+                while (readOneJson(r)) {
+                    if (r[QStringLiteral("cmd")].toString() == QStringLiteral("device_offline")) {
+                        deviceClientOff = true;
+                        break;
+                    }
+                }
+            }
+            if (deviceClientOff) {
+                QMessageBox::information(nullptr, "客户端离线",
+                    "音箱嵌入式端已断开连接，与服务器的会话已结束。\n请检查设备是否在线（可说「在线模式」恢复）。\n将返回登录界面。");
+            } else {
+                QMessageBox::information(nullptr, "连接提示",
+                    "与服务器连接已断开，正在尝试重新连接。\n将返回登录界面。");
+            }
+            if (!playerAlreadyNotified)
+                emit disconnectedFromServer();
         }
         lastConnectState = currentState;  // 更新上一次状态
     }
@@ -74,34 +93,43 @@ void Socket::sendDisconnectedFromServer(void)
     emit disconnectedFromServer(); // 发射掉线信号
 }
 
+void Socket::markDisconnectDueToDeviceClient(void)
+{
+    m_disconnectDueToDeviceClient = true;
+}
+
+bool Socket::readOneJson(QJsonObject &root)
+{
+    root = QJsonObject();
+    if (m_socket->bytesAvailable() < 4)
+        return false;
+    char lenbuf[4];
+    if (m_socket->peek(lenbuf, 4) != 4)
+        return false;
+    int data_len = 0;
+    std::memcpy(&data_len, lenbuf, sizeof(data_len));
+    if (data_len <= 0 || data_len > 1024 * 1024)
+        return false;
+    if (m_socket->bytesAvailable() < 4 + data_len)
+        return false;
+    m_socket->read(lenbuf, 4);
+    QByteArray body = m_socket->read(data_len);
+    if (body.size() != data_len)
+        return false;
+    QJsonParseError parseErr;
+    QJsonDocument dt = QJsonDocument::fromJson(body, &parseErr);
+    if (dt.isNull() || !dt.isObject()) {
+        qDebug() << "JSON 解析失败：" << parseErr.errorString();
+        return false;
+    }
+    root = dt.object();
+    return true;
+}
+
 void Socket::ReadData(QJsonObject& root)
 {
-    char rcvbuf[1024] = {0};
-    int size = 0;
-    // 1. 读取数据长度len
-    while(size < (int)sizeof(int)){
-        size += m_socket->read(rcvbuf + size, sizeof(int) - size);
-    }
-    int data_len = *(int*)rcvbuf;
-    size = 0;
-    memset(rcvbuf, 0, sizeof(rcvbuf));
-    // 2. 读取数据
-    while(size < data_len){
-        size += m_socket->read(rcvbuf + size, data_len - size);
-    }
-
-    qDebug()<<"收到"<<data_len<<"字节"<<",消息："<<rcvbuf;
-
-    //数据解析
-    QJsonParseError parseErr; // 添加错误捕获，方便排查
-    QJsonDocument dt = QJsonDocument::fromJson(rcvbuf, &parseErr);
-    if(dt.isNull())
-    {
-        qDebug() << "JSON 解析失败：" << parseErr.errorString();
-        return;
-    }
-    root = dt.object(); // 将字符串解析为json对象
-
+    if (!readOneJson(root))
+        root = QJsonObject();
 }
 
 

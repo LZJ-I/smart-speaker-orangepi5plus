@@ -22,8 +22,12 @@ private:
     QString m_appid;
     QString m_deviceid;
     QTimer *reportTimer;       // 定时上报 的定时器
-    bool m_get_music_flag;        // 登录完毕后，向客户端请求歌曲列表，仅使用一次。
-    QString m_state;          // 记录当前状态，决定下一次点击play按钮发送什么信号
+    bool m_get_music_flag;
+    qint64 m_lastPlaylistRequestMs;
+    int m_playlistVersion;
+    QString m_state;
+    QString m_currentSource;
+    QString m_currentSongId;
     void player_device_report_handler(QJsonObject& root);   // 嵌入式端 [上报消息] 处理函数;
     void player_get_music_list(void);   // app 向 嵌入式端[请求歌曲列表]
     void player_upload_music_list_handler(QJsonObject& root);   // 嵌入式端 [上传歌曲列表] 处理函数
@@ -38,6 +42,8 @@ private:   /* 处理列表样式相关 */
     int getCurrentSelectedMusicIndex();
     // 获取歌曲列表总数（不含标题项）
     int getMusicListCount();
+    void syncCurrentTrackSelection(int currentIndex = -1);
+    void updatePlaylistPageLabelFromJson(const QJsonObject &root);
 private slots:
     void server_reply_slot(void);   // 接收到服务器信息的槽函数
     void tryreport();               // 每秒定时上报一次的槽函数
@@ -49,6 +55,10 @@ private slots:
     void on_single_radioButton_clicked();
     void on_order_radioButton_clicked();
     void on_music_listWidget_doubleClicked(const QModelIndex &index);
+    void on_playlist_page_prev_button_clicked();
+    void on_playlist_page_next_button_clicked();
+    void on_song_search_button_clicked();
+    void on_playlist_search_button_clicked();
 };
 
 #endif // PLAYER_H

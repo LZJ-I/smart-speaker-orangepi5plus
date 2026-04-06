@@ -22,8 +22,7 @@ Bind::~Bind()
 void Bind::server_reply_slot(void)
 {
     QJsonObject root;
-    m_socket->ReadData(root);
-
+    while (m_socket->readOneJson(root)) {
     QString cmd = root["cmd"].toString();
     if(cmd != "reply_app_bind")         // app绑定
         qDebug()<<"出现未知cmd指令:"<<cmd;
@@ -51,7 +50,7 @@ void Bind::server_reply_slot(void)
         // 其他错误
         QMessageBox::information(nullptr, "绑定结果", "服务器错误");
     }
-
+    }
 }
 
 

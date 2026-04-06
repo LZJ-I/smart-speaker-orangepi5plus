@@ -54,9 +54,7 @@ void Widget::onSocketDisconnected()
 void Widget::server_reply_slot(void)
 {
     QJsonObject root;
-    m_socket->ReadData(root);
-
-    //具体的逻辑处理
+    while (m_socket->readOneJson(root)) {
     QString cmd = root["cmd"].toString();
     if(cmd == "reply_app_register")         // app注册
         app_register_reply_handler(root);
@@ -64,6 +62,7 @@ void Widget::server_reply_slot(void)
         app_login_reply_handler(root);
     else
         qDebug()<<"出现未知cmd指令:"<<cmd;
+    }
 }
 
 // 处理服务器 回复的 app登录结果
