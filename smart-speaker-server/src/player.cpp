@@ -19,6 +19,19 @@ int json_int_or_default(const Json::Value &obj, const char *key, int default_val
     return obj[key].asInt();
 }
 
+void sync_cached_snapshots_to_app(PlayerInfo_t *player, Server *s)
+{
+    if (player == nullptr || s == nullptr || player->m_app_bev == nullptr) {
+        return;
+    }
+    if (player->m_last_device_report.isObject()) {
+        s->server_send_data(player->m_app_bev, player->m_last_device_report);
+    }
+    if (player->m_last_music_list.isObject()) {
+        s->server_send_data(player->m_app_bev, player->m_last_music_list);
+    }
+}
+
 }  // namespace
 
 void PlayerInfo::player_timer_cb(evutil_socket_t fd, short events, void *arg)
@@ -122,6 +135,7 @@ void PlayerInfo::player_device_update_infolist(struct bufferevent *bev, const Js
             it->m_cur_mode = cur_mode;
             it->m_device_last_time = time(NULL);
             it->m_device_bev = bev;
+            it->m_last_device_report = report;
 
             if (it->m_app_bev != nullptr) {
                 s->server_send_data(it->m_app_bev, report);
@@ -141,6 +155,7 @@ void PlayerInfo::player_device_update_infolist(struct bufferevent *bev, const Js
         player_info.m_cur_mode = cur_mode;
         player_info.m_device_last_time = time(NULL);
         player_info.m_app_last_time = 0;
+        player_info.m_last_device_report = report;
         player_info.m_device_bev = bev;
         player_info.m_app_bev = nullptr;
         m_player_list->push_back(player_info);
@@ -152,13 +167,16 @@ void PlayerInfo::player_app_update_infolist(struct bufferevent *bev, const Json:
 {
     std::string deviceid = json_string_or_empty(report, "deviceid");
     std::string appid = json_string_or_empty(report, "appid");
-    (void)s;
     auto it = m_player_list->begin();
     for (; it != m_player_list->end(); it++) {
         if (deviceid == it->m_deviceid) {
+            bool need_sync = (it->m_app_bev != bev);
             it->m_app_last_time = time(NULL);
             it->m_app_bev = bev;
             it->m_appid = appid;
+            if (need_sync) {
+                sync_cached_snapshots_to_app(&(*it), s);
+            }
             break;
         }
     }
@@ -168,6 +186,7 @@ void PlayerInfo::player_device_update_music_list(struct bufferevent *bev, const 
 {
     for (auto it = m_player_list->begin(); it != m_player_list->end(); it++) {
         if (it->m_device_bev == bev) {
+            it->m_last_music_list = report;
             if (it->m_app_bev != nullptr) {
                 Server::debug("嵌入式端上报音乐列表 转发给应用端");
                 s->server_send_data(it->m_app_bev, report);

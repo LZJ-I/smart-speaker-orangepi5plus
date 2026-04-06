@@ -6,6 +6,7 @@ const childProcess = require('child_process')
 const { URL } = require('url')
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'config', 'music-service.toml')
+const DEFAULT_MUSIC_PAGE_SIZE = 30
 
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true })
@@ -23,8 +24,10 @@ function ensureConfigFile() {
       '',
       '# 当前优先走 LX 风格 provider',
       'provider = "lx"',
-      'default_source = "kw"',
-      'search_sources = "kw"',
+      'default_source = "all"',
+      'default_leaderboard_source = "wy"',
+      'default_leaderboard_id = "3778678"',
+      'search_sources = "kw,wy"',
       'playlist_search_sources = "kw,wy"',
       'resolve_quality = "320k"',
       'music_source_script = "../music-source/lx.js"',
@@ -70,7 +73,7 @@ function readConfig() {
   const parsed = parseToml(fs.readFileSync(CONFIG_PATH, 'utf8'))
   const configDir = path.dirname(CONFIG_PATH)
   const defaultSource =
-    typeof parsed.default_source === 'string' && parsed.default_source ? parsed.default_source : 'kw'
+    typeof parsed.default_source === 'string' && parsed.default_source ? parsed.default_source : 'all'
   const sourceScriptRaw =
     typeof parsed.music_source_script === 'string' && parsed.music_source_script
       ? parsed.music_source_script
@@ -80,6 +83,14 @@ function readConfig() {
     port: Number.isInteger(parsed.port) && parsed.port > 0 ? parsed.port : 9300,
     provider: typeof parsed.provider === 'string' && parsed.provider ? parsed.provider : 'lx',
     defaultSource,
+    defaultLeaderboardSource:
+      typeof parsed.default_leaderboard_source === 'string' && parsed.default_leaderboard_source
+        ? parsed.default_leaderboard_source
+        : 'wy',
+    defaultLeaderboardId:
+      typeof parsed.default_leaderboard_id === 'string' && parsed.default_leaderboard_id
+        ? parsed.default_leaderboard_id
+        : '3778678',
     searchSources: parseCsv(parsed.search_sources, [defaultSource]),
     playlistSearchSources: parseCsv(parsed.playlist_search_sources, ['kw', 'wy']),
     resolveQuality:
@@ -105,7 +116,7 @@ function safeNumber(value, fallback) {
 
 function paginate(items, page, pageSize) {
   const safePage = safeNumber(page, 1)
-  const safePageSize = safeNumber(pageSize, 10)
+  const safePageSize = safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE)
   const total = items.length
   const totalPages = total === 0 ? 0 : Math.ceil(total / safePageSize)
   const start = (safePage - 1) * safePageSize
@@ -262,9 +273,20 @@ function buildPlaylistItem(source, id, title, subtitle, cover, songCount) {
   }
 }
 
+function buildArtistItem(source, id, title, subtitle, cover) {
+  return {
+    kind: 'artist',
+    source: String(source || ''),
+    id: String(id || ''),
+    title: String(title || ''),
+    subtitle: String(subtitle || ''),
+    cover: String(cover || '')
+  }
+}
+
 function emptySongSearchPage(page, pageSize) {
   const safePage = safeNumber(page, 1)
-  const safeSize = safeNumber(pageSize, 10)
+  const safeSize = safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE)
   return {
     result: 'empty',
     kind: 'song',
@@ -313,6 +335,102 @@ function lxSongIdKey(item) {
   return `${item.source}_${item.id}`
 }
 
+function normalizeForMatch(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+function splitKeywordHints(keyword) {
+  const raw = String(keyword || '').trim()
+  const compact = normalizeForMatch(raw)
+  const compactNoDe = compact.replace(/的+/g, '')
+  const hint = {
+    raw,
+    compact,
+    compactNoDe,
+    title: '',
+    singer: ''
+  }
+  if (!compact) return hint
+
+  const rawNoSpace = raw.replace(/\s+/g, '')
+  const splitBy = (token) => {
+    const idx = rawNoSpace.lastIndexOf(token)
+    if (idx <= 0 || idx >= rawNoSpace.length - token.length) return null
+    const left = rawNoSpace.slice(0, idx)
+    const right = rawNoSpace.slice(idx + token.length)
+    const singer = normalizeForMatch(left)
+    const title = normalizeForMatch(right)
+    if (!singer || !title) return null
+    return { singer, title }
+  }
+  const patterns = ['唱的', '的', '-', '－', '—']
+  for (const p of patterns) {
+    const r = splitBy(p)
+    if (r) {
+      hint.singer = r.singer
+      hint.title = r.title
+      break
+    }
+  }
+  return hint
+}
+
+function songDedupKey(item) {
+  const title = normalizeForMatch(item && item.title)
+  const subtitle = normalizeForMatch(item && item.subtitle)
+  if (title || subtitle) {
+    return `ts:${title}__${subtitle}`
+  }
+  return `id:${lxSongIdKey(item)}`
+}
+
+function songMatchScore(keywordHint, item) {
+  if (!keywordHint || !keywordHint.compact) return 0
+  const keywordNorm = keywordHint.compact
+  const title = normalizeForMatch(item && item.title)
+  const subtitle = normalizeForMatch(item && item.subtitle)
+  const full = `${title}${subtitle}`
+  const fullSpaced = `${title} ${subtitle}`.trim()
+  let score = 0
+  if (title === keywordNorm) score += 12000
+  else if (title.startsWith(keywordNorm)) score += 5200
+  else if (title.includes(keywordNorm)) score += 1200
+  if (subtitle === keywordNorm) score += 2500
+  else if (subtitle.startsWith(keywordNorm)) score += 1100
+  else if (subtitle.includes(keywordNorm)) score += 500
+  if (full === keywordNorm) score += 1200
+  else if (full.startsWith(keywordNorm)) score += 480
+  else if (full.includes(keywordNorm)) score += 160
+  if (keywordHint.compactNoDe) {
+    if (title === keywordHint.compactNoDe) score += 1800
+    else if (full.includes(keywordHint.compactNoDe)) score += 220
+  }
+  if (keywordHint.title && keywordHint.singer) {
+    const titleHit = title === keywordHint.title
+      ? 1
+      : title.startsWith(keywordHint.title)
+        ? 0.7
+        : title.includes(keywordHint.title)
+          ? 0.45
+          : 0
+    const singerHit = subtitle === keywordHint.singer
+      ? 1
+      : subtitle.startsWith(keywordHint.singer)
+        ? 0.7
+        : subtitle.includes(keywordHint.singer)
+          ? 0.45
+          : 0
+    if (titleHit > 0) score += Math.floor(5600 * titleHit)
+    if (singerHit > 0) score += Math.floor(3800 * singerHit)
+    if (titleHit > 0 && singerHit > 0) score += 4200
+  }
+  score += Math.floor(lxSimilar(keywordNorm, full) * 100)
+  score += Math.floor(lxSimilar(keywordHint.raw, fullSpaced) * 100)
+  return score
+}
+
 function allPageNum(total, limit) {
   const t = Number(total) || 0
   const l = safeNumber(limit, 1)
@@ -322,7 +440,7 @@ function allPageNum(total, limit) {
 
 async function searchKwSongs(keyword, page, pageSize) {
   const safePage = safeNumber(page, 1)
-  const safeSize = safeNumber(pageSize, 10)
+  const safeSize = safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE)
   let lastError = null
   for (let attempt = 0; attempt < 3; attempt++) {
     const searchUrl =
@@ -388,7 +506,7 @@ async function searchKwSongs(keyword, page, pageSize) {
 
 async function searchWySongs(keyword, page, pageSize) {
   const safePage = safeNumber(page, 1)
-  const safeSize = safeNumber(pageSize, 10)
+  const safeSize = safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE)
   const offset = (safePage - 1) * safeSize
   const url =
     'https://music.163.com/api/search/get?s=' +
@@ -432,7 +550,7 @@ async function searchWySongs(keyword, page, pageSize) {
 
 async function searchWyPlaylists(keyword, page, pageSize) {
   const safePage = safeNumber(page, 1)
-  const safeSize = safeNumber(pageSize, 10)
+  const safeSize = safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE)
   const offset = (safePage - 1) * safeSize
   const url =
     'https://music.163.com/api/search/get?s=' +
@@ -544,6 +662,128 @@ async function loadKwPlaylistDetail(id) {
   }
 }
 
+function paginateDetailItems(result, page, pageSize) {
+  const sliced = paginate(Array.isArray(result.items) ? result.items : [], page, pageSize)
+  return {
+    result: sliced.items.length > 0 ? 'ok' : 'empty',
+    kind: result.kind || 'song',
+    items: sliced.items,
+    page: sliced.page,
+    total: sliced.total,
+    total_pages: sliced.total_pages
+  }
+}
+
+async function searchWyArtists(keyword, page, pageSize) {
+  const safePage = safeNumber(page, 1)
+  const safeSize = safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE)
+  const offset = (safePage - 1) * safeSize
+  const url =
+    'https://music.163.com/api/search/get?s=' +
+    encodeURIComponent(keyword) +
+    '&type=100&limit=' +
+    safeSize +
+    '&offset=' +
+    offset
+  const { body } = await requestJson(url, {
+    headers: {
+      Referer: 'https://music.163.com/',
+      'User-Agent': 'Mozilla/5.0 smart-speaker-music-service'
+    },
+    timeout: HTTP_SEARCH_TIMEOUT_MS
+  })
+  const artists = body.result && Array.isArray(body.result.artists) ? body.result.artists : []
+  const list = artists.map((item) =>
+    buildArtistItem(
+      'wy',
+      String(item.id || ''),
+      String(item.name || ''),
+      String(item.alias && item.alias[0] ? item.alias[0] : ''),
+      String(item.picUrl || '')
+    )
+  )
+  return {
+    result: list.length > 0 ? 'ok' : 'empty',
+    kind: 'artist',
+    items: list,
+    page: safePage,
+    total: Number((body.result && body.result.artistCount) || list.length),
+    total_pages: Number((body.result && body.result.artistCount) || 0) > 0 ? Math.ceil(Number(body.result.artistCount) / safeSize) : 0
+  }
+}
+
+async function loadWyArtistHot(id) {
+  const detailUrl = 'https://music.163.com/api/artist/' + encodeURIComponent(String(id))
+  const { body } = await requestJson(detailUrl, {
+    headers: {
+      Referer: 'https://music.163.com/',
+      'User-Agent': 'Mozilla/5.0 smart-speaker-music-service'
+    }
+  })
+  const tracks = Array.isArray(body.hotSongs) ? body.hotSongs : []
+  const list = tracks.map((item) => {
+    const artist =
+      Array.isArray(item.artists) && item.artists[0] && item.artists[0].name ? String(item.artists[0].name) : ''
+    return buildSongItem('wy', String(item.id || ''), String(item.name || ''), artist, '')
+  })
+  return {
+    result: list.length > 0 ? 'ok' : 'empty',
+    kind: 'song',
+    items: list,
+    page: 1,
+    total: list.length,
+    total_pages: list.length > 0 ? 1 : 0
+  }
+}
+
+async function loadWyLeaderboards() {
+  const url = 'https://music.163.com/api/toplist'
+  const { body } = await requestJson(url, {
+    headers: {
+      Referer: 'https://music.163.com/',
+      'User-Agent': 'Mozilla/5.0 smart-speaker-music-service'
+    }
+  })
+  const boards = Array.isArray(body.list) ? body.list : []
+  const items = boards.map((item) =>
+    buildPlaylistItem(
+      'wy',
+      String(item.id || ''),
+      String(item.name || ''),
+      String(item.updateFrequency || ''),
+      String(item.coverImgUrl || ''),
+      Number(item.trackCount || 0)
+    )
+  )
+  return {
+    result: items.length > 0 ? 'ok' : 'empty',
+    kind: 'playlist',
+    items,
+    page: 1,
+    total: items.length,
+    total_pages: items.length > 0 ? 1 : 0
+  }
+}
+
+async function loadDefaultLeaderboardDetail(config, sourceHint) {
+  const raw = String(sourceHint || '').trim().toLowerCase()
+  const ambiguous = !raw || raw === 'all' || raw === 'auto'
+  const source = ambiguous
+    ? String(config.defaultLeaderboardSource || config.defaultSource || 'wy').trim().toLowerCase()
+    : raw
+  const boardId = String(config.defaultLeaderboardId || '').trim()
+  if (!boardId) {
+    return { result: 'empty', kind: 'song', items: [], page: 1, total: 0, total_pages: 0 }
+  }
+  if (source === 'wy') {
+    return loadWyPlaylistDetail(boardId)
+  }
+  if (source === 'kw') {
+    return loadKwPlaylistDetail(boardId)
+  }
+  return { result: 'empty', kind: 'song', items: [], page: 1, total: 0, total_pages: 0 }
+}
+
 const songSearchBySource = {
   kw: searchKwSongs,
   wy: searchWySongs
@@ -551,8 +791,9 @@ const songSearchBySource = {
 
 async function searchSongsAggregated(keyword, page, pageSize) {
   const safePage = safeNumber(page, 1)
-  const safeSize = safeNumber(pageSize, 10)
+  const safeSize = safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE)
   const LX_LIST_LIMIT = 30
+  const keywordHint = splitKeywordHints(keyword)
   const settled = await Promise.allSettled([
     withSearchTimeout(searchKwSongs(keyword, safePage, LX_LIST_LIMIT)),
     withSearchTimeout(searchWySongs(keyword, safePage, LX_LIST_LIMIT))
@@ -575,7 +816,7 @@ async function searchSongsAggregated(keyword, page, pageSize) {
   addSource(1)
   const seen = new Set()
   combined = combined.filter((item) => {
-    const k = lxSongIdKey(item)
+    const k = songDedupKey(item)
     if (seen.has(k)) return false
     seen.add(k)
     return true
@@ -583,26 +824,31 @@ async function searchSongsAggregated(keyword, page, pageSize) {
   const scored = combined.map((item, i) => ({
     i,
     item,
-    score: lxSimilar(keyword, `${item.title} ${item.subtitle}`)
+    score: songMatchScore(keywordHint, item)
   }))
   scored.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.i - b.i))
   const merged = scored.map((x) => x.item)
   if (merged.length === 0) {
     return emptySongSearchPage(safePage, safeSize)
   }
+  const itemsOut = merged.slice(0, safeSize)
+  const totalPages = maxTotal > 0 ? Math.ceil(maxTotal / safeSize) : 0
   return {
     result: 'ok',
     kind: 'song',
-    items: merged,
+    items: itemsOut,
     page: safePage,
     total: maxTotal,
-    total_pages: maxAllPage
+    total_pages: totalPages > 0 ? totalPages : maxAllPage
   }
 }
 
 async function searchSongs(keyword, page, pageSize, config, sourceHint) {
   const hint = String(sourceHint || '').trim().toLowerCase()
-  if (!hint || hint === 'all') {
+  if (!String(keyword || '').trim()) {
+    return paginateDetailItems(await loadDefaultLeaderboardDetail(config, hint), page, pageSize)
+  }
+  if (!hint || hint === 'all' || hint === 'auto' || hint === 'default') {
     return searchSongsAggregated(keyword, page, pageSize)
   }
   const direct = songSearchBySource[hint]
@@ -648,7 +894,7 @@ function mergeRankPaginatePlaylists(keyword, sourcePages, page, pageSize) {
     items: sliced.items,
     page: sliced.page,
     total: rows.length,
-    total_pages: rows.length === 0 ? 0 : Math.ceil(rows.length / safeNumber(pageSize, 10))
+    total_pages: rows.length === 0 ? 0 : Math.ceil(rows.length / safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE))
   }
 }
 
@@ -658,7 +904,7 @@ async function searchPlaylists(keyword, page, pageSize, config) {
       ? config.playlistSearchSources
       : ['kw', 'wy']
   const safePage = safeNumber(page, 1)
-  const safeSize = safeNumber(pageSize, 10)
+  const safeSize = safeNumber(pageSize, DEFAULT_MUSIC_PAGE_SIZE)
   const fetchN = Math.min(80, Math.max(safePage * safeSize * 2, 24))
   const tasks = []
   if (srcs.includes('kw')) {
@@ -802,7 +1048,7 @@ function createServer() {
       if (pathname === '/music/search/song') {
         const keyword = String(body.keyword || '').trim()
         const page = safeNumber(body.page, 1)
-        const pageSize = safeNumber(body.page_size, 10)
+        const pageSize = safeNumber(body.page_size, DEFAULT_MUSIC_PAGE_SIZE)
         const sourceHint = String(body.source || '').trim()
         const result = await searchSongs(keyword, page, pageSize, config, sourceHint)
         logListPreview('search.song', keyword, result.result, result.items)
@@ -812,7 +1058,7 @@ function createServer() {
       if (pathname === '/music/search/playlist') {
         const keyword = String(body.keyword || '').trim()
         const page = safeNumber(body.page, 1)
-        const pageSize = safeNumber(body.page_size, 10)
+        const pageSize = safeNumber(body.page_size, DEFAULT_MUSIC_PAGE_SIZE)
         const result = await searchPlaylists(keyword, page, pageSize, config)
         logListPreview('search.playlist', keyword, result.result, result.items)
         return json(res, 200, result)
@@ -832,25 +1078,61 @@ function createServer() {
       }
 
       if (pathname === '/music/search/artist') {
-        return json(res, 200, {
-          result: 'empty',
-          kind: 'artist',
-          items: [],
-          page: safeNumber(body.page, 1),
-          total: 0,
-          total_pages: 0
-        })
+        const keyword = String(body.keyword || '').trim()
+        const page = safeNumber(body.page, 1)
+        const pageSize = safeNumber(body.page_size, DEFAULT_MUSIC_PAGE_SIZE)
+        const source = String(body.source || config.defaultSource || 'wy').trim().toLowerCase()
+        if (!keyword) {
+          return json(res, 200, { result: 'empty', kind: 'artist', items: [], page, total: 0, total_pages: 0 })
+        }
+        if (source !== 'wy') {
+          return json(res, 200, { result: 'empty', kind: 'artist', items: [], page, total: 0, total_pages: 0 })
+        }
+        const result = await searchWyArtists(keyword, page, pageSize)
+        logListPreview('search.artist', keyword, result.result, result.items)
+        return json(res, 200, result)
       }
 
       if (pathname === '/music/artist/hot') {
-        return json(res, 200, {
-          result: 'empty',
-          kind: 'song',
-          items: [],
-          page: 1,
-          total: 0,
-          total_pages: 0
-        })
+        const artistId = String(body.id || '').trim()
+        const source = String(body.source || config.defaultSource || 'wy').trim().toLowerCase()
+        const page = safeNumber(body.page, 1)
+        const pageSize = safeNumber(body.page_size, DEFAULT_MUSIC_PAGE_SIZE)
+        if (!artistId || source !== 'wy') {
+          return json(res, 200, { result: 'empty', kind: 'song', items: [], page, total: 0, total_pages: 0 })
+        }
+        const result = paginateDetailItems(await loadWyArtistHot(artistId), page, pageSize)
+        logListPreview('artist.hot', artistId, result.result, result.items)
+        return json(res, 200, result)
+      }
+
+      if (pathname === '/music/leaderboard/list') {
+        const source = String(body.source || config.defaultLeaderboardSource || 'wy').trim().toLowerCase()
+        if (source !== 'wy') {
+          return json(res, 200, { result: 'empty', kind: 'playlist', items: [], page: 1, total: 0, total_pages: 0 })
+        }
+        const result = await loadWyLeaderboards()
+        logListPreview('leaderboard.list', source, result.result, result.items)
+        return json(res, 200, result)
+      }
+
+      if (pathname === '/music/leaderboard/detail') {
+        const boardId = String(body.id || config.defaultLeaderboardId || '').trim()
+        const source = String(body.source || config.defaultLeaderboardSource || 'wy').trim().toLowerCase()
+        const page = safeNumber(body.page, 1)
+        const pageSize = safeNumber(body.page_size, DEFAULT_MUSIC_PAGE_SIZE)
+        let result
+        if (!boardId) {
+          result = { result: 'empty', kind: 'song', items: [], page, total: 0, total_pages: 0 }
+        } else if (source === 'wy') {
+          result = paginateDetailItems(await loadWyPlaylistDetail(boardId), page, pageSize)
+        } else if (source === 'kw') {
+          result = paginateDetailItems(await loadKwPlaylistDetail(boardId), page, pageSize)
+        } else {
+          result = { result: 'empty', kind: 'song', items: [], page, total: 0, total_pages: 0 }
+        }
+        logListPreview('leaderboard.detail', boardId, result.result, result.items)
+        return json(res, 200, result)
       }
 
       if (pathname === '/music/url/resolve') {

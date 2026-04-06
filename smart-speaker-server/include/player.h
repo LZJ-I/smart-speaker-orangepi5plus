@@ -24,6 +24,8 @@ typedef struct PlayerInfo_t
     int m_cur_mode;
     time_t m_device_last_time;
     time_t m_app_last_time;
+    Json::Value m_last_device_report;
+    Json::Value m_last_music_list;
     struct bufferevent *m_device_bev;
     struct bufferevent *m_app_bev;
 } PlayerInfo_t;

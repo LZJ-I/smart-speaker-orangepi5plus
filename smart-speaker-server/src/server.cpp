@@ -44,11 +44,6 @@ bool json_has_string(const Json::Value &obj, const char *key)
     return obj.isObject() && obj.isMember(key) && obj[key].isString();
 }
 
-bool json_has_int(const Json::Value &obj, const char *key)
-{
-    return obj.isObject() && obj.isMember(key) && obj[key].isIntegral();
-}
-
 std::string json_string_or_empty(const Json::Value &obj, const char *key)
 {
     if (!obj.isObject() || !obj.isMember(key))
@@ -61,6 +56,17 @@ int json_int_or_default(const Json::Value &obj, const char *key, int default_val
     if (!obj.isObject() || !obj.isMember(key))
         return default_value;
     return obj[key].asInt();
+}
+
+/* Json::Reader 等可能把整数解析为 real，isIntegral() 为假导致 page_size 回退默认（曾固定成 10） */
+static int json_int_from_numeric_member(const Json::Value &obj, const char *key, int default_value)
+{
+    if (!obj.isObject() || !obj.isMember(key))
+        return default_value;
+    const Json::Value &v = obj[key];
+    if (!v.isNumeric())
+        return default_value;
+    return v.asInt();
 }
 
 bool has_stream_audio_suffix(const char *filename)
@@ -431,9 +437,8 @@ bool reply_music_search_song(Server *server, struct bufferevent *bev, const Json
     music_search_result_t res;
     std::string keyword = json_string_or_empty(root, "keyword");
     std::string platform = json_string_or_empty(root, "source");
-    int page = json_has_int(root, "page") ? json_int_or_default(root, "page", 1) : 1;
-    int page_size = json_has_int(root, "page_size") ? json_int_or_default(root, "page_size", DEFAULT_PAGE_SIZE)
-                                                    : DEFAULT_PAGE_SIZE;
+    int page = json_int_from_numeric_member(root, "page", 1);
+    int page_size = json_int_from_numeric_member(root, "page_size", DEFAULT_PAGE_SIZE);
     fill_music_service_reply_cmd(reply, cmd);
 
     if (page <= 0) {
@@ -519,9 +524,8 @@ bool proxy_music_service_list(Server *server, struct bufferevent *bev, const Jso
 
     request["keyword"] = json_string_or_empty(root, "keyword");
     request["source"] = json_string_or_empty(root, "source");
-    request["page"] = json_has_int(root, "page") ? json_int_or_default(root, "page", 1) : 1;
-    request["page_size"] = json_has_int(root, "page_size") ? json_int_or_default(root, "page_size", DEFAULT_PAGE_SIZE)
-                                                           : DEFAULT_PAGE_SIZE;
+    request["page"] = json_int_from_numeric_member(root, "page", 1);
+    request["page_size"] = json_int_from_numeric_member(root, "page_size", DEFAULT_PAGE_SIZE);
     if (request["page"].asInt() <= 0) {
         request["page"] = 1;
     }
@@ -566,6 +570,8 @@ bool proxy_music_service_detail(Server *server, struct bufferevent *bev, const J
 
     request["id"] = json_string_or_empty(root, "id");
     request["source"] = json_string_or_empty(root, "source");
+    request["page"] = json_int_from_numeric_member(root, "page", 1);
+    request["page_size"] = json_int_from_numeric_member(root, "page_size", DEFAULT_PAGE_SIZE);
     fill_music_service_reply_cmd(reply, cmd);
     if (request["id"].asString().empty()) {
         reply["result"] = "fail";
@@ -591,6 +597,21 @@ bool proxy_music_service_detail(Server *server, struct bufferevent *bev, const J
     reply["total_pages"] = json_int_or_default(response, "total_pages", 0);
     debug_music_items_preview(cmd.c_str(), json_string_or_empty(root, "id"), reply["items"], reply["result"]);
     return server->server_send_data(bev, reply);
+}
+
+bool proxy_music_service_default_leaderboard_detail(Server *server, struct bufferevent *bev, const Json::Value &root,
+                                                    const std::string &cmd)
+{
+    Json::Value patched = root;
+    const ServerRuntimeConfig &cfg = server_runtime_config();
+
+    if (json_string_or_empty(patched, "source").empty()) {
+        patched["source"] = cfg.default_leaderboard_source;
+    }
+    if (json_string_or_empty(patched, "id").empty()) {
+        patched["id"] = cfg.default_leaderboard_id;
+    }
+    return proxy_music_service_detail(server, bev, patched, cmd, "/music/leaderboard/detail", "song");
 }
 
 bool proxy_music_service_resolve(Server *server, struct bufferevent *bev, const Json::Value &root,
@@ -791,17 +812,19 @@ void Server::read_cb(struct bufferevent *bev, void *ctx)
         s->server_search_music(bev, root);
     } else if (cmd == "music.search.song") {
         s->debug("[消息类型] music.search.song");
-        if (music_api_configured()) {
-            reply_music_search_song(s, bev, root, cmd);
-        } else {
-            proxy_music_service_list(s, bev, root, cmd, "/music/search/song", "song");
-        }
+        proxy_music_service_list(s, bev, root, cmd, "/music/search/song", "song");
     } else if (cmd == "music.search.playlist") {
         s->debug("[消息类型] music.search.playlist");
         proxy_music_service_list(s, bev, root, cmd, "/music/search/playlist", "playlist");
     } else if (cmd == "music.search.artist") {
         s->debug("[消息类型] music.search.artist");
         proxy_music_service_list(s, bev, root, cmd, "/music/search/artist", "artist");
+    } else if (cmd == "music.leaderboard.list") {
+        s->debug("[消息类型] music.leaderboard.list");
+        proxy_music_service_list(s, bev, root, cmd, "/music/leaderboard/list", "playlist");
+    } else if (cmd == "music.leaderboard.detail") {
+        s->debug("[消息类型] music.leaderboard.detail");
+        proxy_music_service_default_leaderboard_detail(s, bev, root, cmd);
     } else if (cmd == "music.playlist.detail") {
         s->debug("[消息类型] music.playlist.detail");
         proxy_music_service_detail(s, bev, root, cmd, "/music/playlist/detail", "song");
@@ -830,12 +853,16 @@ void Server::read_cb(struct bufferevent *bev, void *ctx)
     } else if (cmd == "app_start_play" || cmd == "app_stop_play" || cmd == "app_suspend_play" ||
                cmd == "app_continue_play" || cmd == "app_play_next_song" || cmd == "app_play_prev_song" ||
                cmd == "app_add_volume" || cmd == "app_sub_volume" || cmd == "app_order_mode" ||
-               cmd == "app_single_mode" || cmd == "app_random_mode" || cmd == "app_get_music_list") {
+               cmd == "app_single_mode" || cmd == "app_random_mode" || cmd == "app_get_music_list" ||
+               cmd == "app_play_assign_song" || cmd == "app_play_playlist" || cmd == "app_playlist_next_page" ||
+               cmd == "app_playlist_prev_page") {
         s->server_app_option(bev, root);
     } else if (cmd == "reply_app_start_play" || cmd == "reply_app_stop_play" || cmd == "reply_app_suspend_play" ||
                cmd == "reply_app_continue_play" || cmd == "reply_app_play_next_song" ||
                cmd == "reply_app_play_prev_song" || cmd == "reply_app_add_volume" || cmd == "reply_app_sub_volume" ||
-               cmd == "reply_app_order_mode" || cmd == "reply_app_single_mode" || cmd == "reply_app_random_mode") {
+               cmd == "reply_app_order_mode" || cmd == "reply_app_single_mode" || cmd == "reply_app_random_mode" ||
+               cmd == "reply_app_play_assign_song" || cmd == "reply_app_play_playlist" || cmd == "reply_app_playlist_next_page" ||
+               cmd == "reply_app_playlist_prev_page") {
         s->server_device_reply_handle(bev, root);
     } else {
         s->debug("未知命令：%s", cmd.c_str());
@@ -895,6 +922,14 @@ bool Server::server_app_option(struct bufferevent *bev, Json::Value &root)
         Server::debug("[回复应用端]: 嵌入式端不在线");
         return true;
     }
+    if (cmd == "app_get_music_list" && it->m_last_music_list.isObject()) {
+        if (server_send_data(bev, it->m_last_music_list) == false) {
+            Server::debug("发送缓存音乐列表失败");
+            return false;
+        }
+        Server::debug("[回复应用端缓存命令]: %s", cmd.c_str());
+        return true;
+    }
     if (server_send_data(it->m_device_bev, root) == false) {
         Server::debug("发送回复消息失败");
         return false;
@@ -943,12 +978,8 @@ bool Server::server_search_music(struct bufferevent *bev, const Json::Value &roo
         return false;
     }
     keyword = json_string_or_empty(root, "keyword");
-    if (json_has_int(root, "page")) {
-        page = json_int_or_default(root, "page", page);
-    }
-    if (json_has_int(root, "page_size")) {
-        page_size = json_int_or_default(root, "page_size", page_size);
-    }
+    page = json_int_from_numeric_member(root, "page", page);
+    page_size = json_int_from_numeric_member(root, "page_size", page_size);
     if (page <= 0)
         page = 1;
     if (page_size <= 0)
@@ -1065,12 +1096,8 @@ bool Server::server_list_music(struct bufferevent *bev, const Json::Value &root)
     int total_pages = 0;
     std::string keyword;
 
-    if (json_has_int(root, "page")) {
-        page = json_int_or_default(root, "page", page);
-    }
-    if (json_has_int(root, "page_size")) {
-        page_size = json_int_or_default(root, "page_size", page_size);
-    }
+    page = json_int_from_numeric_member(root, "page", page);
+    page_size = json_int_from_numeric_member(root, "page_size", page_size);
     if (page <= 0)
         page = 1;
     if (page_size <= 0)
@@ -1080,8 +1107,26 @@ bool Server::server_list_music(struct bufferevent *bev, const Json::Value &root)
     trim_keyword(keyword);
 
     if (keyword.empty() || music_remote_keyword_is_vague(keyword)) {
-        fill_list_music_from_local_cache(music, page, page_size, total, total_pages);
-        reply["online_search_enabled"] = true;
+        Json::Value leaderboard_req(Json::objectValue);
+        Json::Value leaderboard_reply(Json::objectValue);
+        std::string error_message;
+        const ServerRuntimeConfig &cfg = server_runtime_config();
+        leaderboard_req["source"] = cfg.default_leaderboard_source;
+        leaderboard_req["id"] = cfg.default_leaderboard_id;
+        leaderboard_req["page"] = page;
+        leaderboard_req["page_size"] = page_size;
+        if (!music_service_post_json("/music/leaderboard/detail", leaderboard_req, &leaderboard_reply, &error_message)) {
+            reply["online_search_enabled"] = false;
+            music = Json::Value(Json::arrayValue);
+            total = 0;
+            total_pages = 0;
+        } else {
+            music = leaderboard_reply.isMember("items") ? leaderboard_reply["items"] : Json::Value(Json::arrayValue);
+            normalize_music_service_items(music, "song");
+            total = json_int_or_default(leaderboard_reply, "total", 0);
+            total_pages = json_int_or_default(leaderboard_reply, "total_pages", 0);
+            reply["online_search_enabled"] = true;
+        }
     } else {
         if (!music_api_configured()) {
             reply["online_search_enabled"] = false;
@@ -1183,6 +1228,26 @@ int Server::server_try_read_one_json(struct bufferevent *bev, Json::Value *root)
     return 1;
 }
 
+static void server_flush_bev_output_best_effort(struct bufferevent *bev)
+{
+    struct event_base *base;
+    struct evbuffer *out;
+    int i;
+
+    if (bev == NULL) {
+        return;
+    }
+    base = bufferevent_get_base(bev);
+    out = bufferevent_get_output(bev);
+    for (i = 0; i < 256; i++) {
+        if (evbuffer_get_length(out) == 0) {
+            break;
+        }
+        (void)bufferevent_flush(bev, EV_WRITE, BEV_FLUSH);
+        (void)event_base_loop(base, EVLOOP_ONCE | EVLOOP_NONBLOCK);
+    }
+}
+
 void Server::event_cb(struct bufferevent *bev, short what, void *ctx)
 {
     Server *s = (Server *)ctx;
@@ -1205,9 +1270,11 @@ void Server::event_cb(struct bufferevent *bev, short what, void *ctx)
                 }
                 if (it->m_app_bev != nullptr) {
                     Json::Value json(Json::objectValue);
+                    struct bufferevent *app_bev = it->m_app_bev;
                     json["cmd"] = "device_offline";
-                    s->server_send_data(it->m_app_bev, json);
-                    bufferevent_free(it->m_app_bev);
+                    s->server_send_data(app_bev, json);
+                    server_flush_bev_output_best_effort(app_bev);
+                    bufferevent_free(app_bev);
                     it->m_app_bev = nullptr;
                 }
                 plist->erase(it);

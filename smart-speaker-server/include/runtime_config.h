@@ -12,6 +12,8 @@ struct ServerRuntimeConfig {
     std::string music_service_host;
     int music_service_port;
     std::string music_service_base_path;
+    std::string default_leaderboard_source;
+    std::string default_leaderboard_id;
 };
 
 const ServerRuntimeConfig &server_runtime_config(void);

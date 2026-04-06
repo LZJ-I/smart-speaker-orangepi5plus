@@ -70,7 +70,12 @@ void write_default_config_if_missing(void)
         << "# 新 Node 音乐子服务地址\n"
         << "music_service_host = \"127.0.0.1\"\n"
         << "music_service_port = 9300\n"
-        << "music_service_base_path = \"\"\n";
+        << "music_service_base_path = \"\"\n"
+        << "\n"
+        << "# 默认推荐榜单（来首歌/推荐一首歌）\n"
+        << "# default_leaderboard_source: wy/kw\n"
+        << "default_leaderboard_source = \"wy\"\n"
+        << "default_leaderboard_id = \"3778678\"\n";
 }
 
 void apply_string(std::string &dst, const std::string &value)
@@ -118,6 +123,10 @@ void load_config(ServerRuntimeConfig &cfg)
             cfg.music_service_port = std::atoi(value.c_str());
         } else if (key == "music_service_base_path") {
             apply_string(cfg.music_service_base_path, value);
+        } else if (key == "default_leaderboard_source") {
+            apply_string(cfg.default_leaderboard_source, value);
+        } else if (key == "default_leaderboard_id") {
+            apply_string(cfg.default_leaderboard_id, value);
         }
     }
 }
@@ -133,6 +142,8 @@ ServerRuntimeConfig load_server_runtime_config(void)
     cfg.music_service_host = "127.0.0.1";
     cfg.music_service_port = 9300;
     cfg.music_service_base_path = "";
+    cfg.default_leaderboard_source = "wy";
+    cfg.default_leaderboard_id = "3778678";
 
     write_default_config_if_missing();
     load_config(cfg);
@@ -160,6 +171,12 @@ ServerRuntimeConfig load_server_runtime_config(void)
     }
     if (cfg.music_service_host.empty()) {
         cfg.music_service_host = "127.0.0.1";
+    }
+    if (cfg.default_leaderboard_source.empty()) {
+        cfg.default_leaderboard_source = "wy";
+    }
+    if (cfg.default_leaderboard_id.empty()) {
+        cfg.default_leaderboard_id = "3778678";
     }
     return cfg;
 }

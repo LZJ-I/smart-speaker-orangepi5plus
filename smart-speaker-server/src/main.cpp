@@ -16,6 +16,7 @@ int main()
     std::string music_service_error;
     if (!music_service_restart_local(&music_service_error)) {
         std::cerr << "music-service 未就绪：" << music_service_error << std::endl;
+        return 1;
     }
     Server server;
     if (!server.initialized_ok()) {

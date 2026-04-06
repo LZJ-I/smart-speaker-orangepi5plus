@@ -10,8 +10,8 @@
 
 #define PORT 8888
 
-#define GET_MAX_MUSIC 5
-#define DEFAULT_PAGE_SIZE 10
+#define GET_MAX_MUSIC 80
+#define DEFAULT_PAGE_SIZE 30
 
 class Server
 {
