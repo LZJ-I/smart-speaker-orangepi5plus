@@ -1,10 +1,8 @@
 #include "alsa_output.h"
 #include <sys/types.h>
-#include <time.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#define DEBUG_LOG_PATH "/home/lzj/smart-speaker-orangepi5plus/smart-speaker-client/.cursor/debug-55e7c0.log"
 #include <sys/wait.h>
 
 snd_pcm_t *g_pcm_handle = NULL;
@@ -234,14 +232,6 @@ int init_alsa_output(unsigned int rate, char* playback_device_name)
     if(period_size != PERIOD_SIZE)
     {
         fprintf(stderr, "[WARNING] 实际周期大小: %ld, 请求周期大小: %d\n", period_size, PERIOD_SIZE);
-    }
-    {
-        FILE *f = fopen(DEBUG_LOG_PATH, "a");
-        if (f) {
-            fprintf(f, "{\"sessionId\":\"55e7c0\",\"message\":\"alsa_period\",\"data\":{\"period_frames\":%lu,\"rate\":%u,\"max_tail_ms\":%lu},\"timestamp\":%lu}\n",
-                (unsigned long)period_size, actual_rate, (unsigned long)(period_size * 1000 / actual_rate), (unsigned long)time(NULL)*1000);
-            fclose(f);
-        }
     }
 
     // 8. 应用参数并准备设备

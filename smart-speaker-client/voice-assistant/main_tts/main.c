@@ -8,7 +8,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
-#include <time.h>
 
 #define LOG_LEVEL 4
 #include "../../debug_log.h"
@@ -20,15 +19,6 @@
 #include "tts_ipc_handler.h"
 
 #define TAG "TTS_MAIN"
-#define DEBUG_LOG_PATH "/home/lzj/smart-speaker-orangepi5plus/smart-speaker-client/.cursor/debug-55e7c0.log"
-static void dbg(const char *msg, const char *k, int v) {
-    FILE *f = fopen(DEBUG_LOG_PATH, "a");
-    if (f) { fprintf(f, "{\"sessionId\":\"55e7c0\",\"message\":\"%s\",\"data\":{\"%s\":%d},\"timestamp\":%lu}\n", msg, k, v, (unsigned long)time(NULL)*1000); fclose(f); }
-}
-static void dbg2(const char *msg, int a, int b) {
-    FILE *f = fopen(DEBUG_LOG_PATH, "a");
-    if (f) { fprintf(f, "{\"sessionId\":\"55e7c0\",\"message\":\"%s\",\"data\":{\"a\":%d,\"b\":%d},\"timestamp\":%lu}\n", msg, a, b, (unsigned long)time(NULL)*1000); fclose(f); }
-}
 
 int running = 1;
 int tts_fd = -1;
@@ -124,19 +114,16 @@ int main(int argc, char const *argv[]) {
             uint8_t *body = NULL;
             int ret = ipc_recv_message(tts_fd, &header, &body);
             if (ret == 1) {
-                dbg2("ipc_recv_result", 1, errno);
                 break;
             }
             if (ret == 2) {
                 continue;
             }
             if (ret != 0) {
-                dbg2("ipc_recv_result", ret, errno);
                 LOGE(TAG, "读取IPC消息失败: %s", strerror(errno));
                 break;
             }
             LOGD(TAG, "收到完整消息，type=%u, body_len=%u, seq=%u", header.type, header.body_len, header.seq);
-            dbg("handle_ipc", "type", (int)header.type);
             handle_ipc_message(header.type, body, header.body_len);
             free(body);
         }

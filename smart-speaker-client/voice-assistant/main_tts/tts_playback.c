@@ -14,11 +14,6 @@
 
 #define TAG "TTS_MAIN"
 #define PLAYBACK_BUFFER_SIZE (16 * 1024)
-#define DEBUG_LOG_PATH "/home/lzj/smart-speaker-orangepi5plus/smart-speaker-client/.cursor/debug-55e7c0.log"
-static void dbg(const char *msg, const char *k, int v) {
-    FILE *f = fopen(DEBUG_LOG_PATH, "a");
-    if (f) { fprintf(f, "{\"sessionId\":\"55e7c0\",\"message\":\"%s\",\"data\":{\"%s\":%d},\"timestamp\":%lu}\n", msg, k, v, (unsigned long)time(NULL)*1000); fclose(f); }
-}
 
 typedef struct {
     char riff[4];
@@ -366,7 +361,6 @@ int tts_playback_request_text(const char *text) {
         return -1;
     }
     tts_playback_notify_player("tts:start");
-    dbg("play_text_generated", "n", n);
     pthread_mutex_lock(&playback_mutex);
     playback_should_stop = 0;
     if (playback_samples != NULL) destroy_generated_audio(playback_samples);
