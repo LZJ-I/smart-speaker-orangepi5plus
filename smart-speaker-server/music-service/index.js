@@ -3,6 +3,7 @@ const http = require('http')
 const https = require('https')
 const path = require('path')
 const childProcess = require('child_process')
+const crypto = require('crypto')
 const { URL } = require('url')
 
 const CONFIG_PATH = path.join(__dirname, '..', 'data', 'config', 'music-service.toml')
@@ -152,6 +153,105 @@ function objStrToJson(text) {
 }
 
 const HTTP_SEARCH_TIMEOUT_MS = 15000
+const PLAYLIST_UPSTREAM_TIMEOUT_MS = 90000
+const PLAYLIST_DETAIL_CACHE_TTL_MS = 8 * 60 * 1000
+const PLAYLIST_DETAIL_CACHE_MAX = 48
+const playlistDetailCache = new Map()
+const playlistDetailInflight = new Map()
+
+function playlistDetailCacheKey(source, playlistId) {
+  return `${String(source || 'kw').toLowerCase()}:${String(playlistId || '').trim()}`
+}
+
+function prunePlaylistDetailCache() {
+  if (playlistDetailCache.size <= PLAYLIST_DETAIL_CACHE_MAX) {
+    return
+  }
+  const sorted = [...playlistDetailCache.entries()].sort((a, b) => a[1].ts - b[1].ts)
+  const drop = sorted.length - PLAYLIST_DETAIL_CACHE_MAX
+  for (let i = 0; i < drop; i++) {
+    playlistDetailCache.delete(sorted[i][0])
+  }
+}
+
+async function getPlaylistDetailFullCached(source, playlistId, loaderFn) {
+  const key = playlistDetailCacheKey(source, playlistId)
+  const now = Date.now()
+  const hit = playlistDetailCache.get(key)
+  if (hit && now - hit.ts < PLAYLIST_DETAIL_CACHE_TTL_MS) {
+    return {
+      result: hit.items.length > 0 ? 'ok' : 'empty',
+      kind: 'song',
+      items: hit.items,
+      page: 1,
+      total: hit.total,
+      total_pages: 1
+    }
+  }
+  let wait = playlistDetailInflight.get(key)
+  if (wait) {
+    return wait
+  }
+  wait = (async () => {
+    try {
+      const full = await loaderFn(playlistId)
+      if (full && Array.isArray(full.items) && full.items.length > 0) {
+        playlistDetailCache.set(key, {
+          items: full.items,
+          total: Number(full.total) > 0 ? full.total : full.items.length,
+          ts: Date.now()
+        })
+        prunePlaylistDetailCache()
+      }
+      return full
+    } finally {
+      playlistDetailInflight.delete(key)
+    }
+  })()
+  playlistDetailInflight.set(key, wait)
+  return wait
+}
+
+const WY_AES_IV = Buffer.from('0102030405060708')
+const WY_WEAPI_PRESET_KEY = Buffer.from('0CoJUm6Qyw8W8jud')
+const WY_LINUX_API_KEY = Buffer.from('rFgB&h#%2?^eDg:Q')
+const WY_WEAPI_BASE62 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+const WY_WEAPI_RSA_PUBLIC = `-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB
+-----END PUBLIC KEY-----`
+
+function wyAesEncrypt(buffer, mode, key, ivBuf) {
+  const cipher = crypto.createCipheriv(mode, key, ivBuf)
+  return Buffer.concat([cipher.update(buffer), cipher.final()])
+}
+
+function wyRsaEncrypt(buffer, pem) {
+  const padded = Buffer.concat([Buffer.alloc(128 - buffer.length, 0), buffer])
+  return crypto.publicEncrypt({ key: pem, padding: crypto.constants.RSA_NO_PADDING }, padded)
+}
+
+function wyLinuxapiEparams(inner) {
+  const text = JSON.stringify(inner)
+  return wyAesEncrypt(Buffer.from(text), 'aes-128-ecb', WY_LINUX_API_KEY, null).toString('hex').toUpperCase()
+}
+
+function wyWeapiForm(object) {
+  const text = JSON.stringify(object)
+  const secretKey = Buffer.from(
+    Array.from(crypto.randomBytes(16), (n) => WY_WEAPI_BASE62.charCodeAt(n % 62))
+  )
+  const enc1 = wyAesEncrypt(Buffer.from(text), 'aes-128-cbc', WY_WEAPI_PRESET_KEY, WY_AES_IV)
+  const enc2 = wyAesEncrypt(Buffer.from(enc1.toString('base64')), 'aes-128-cbc', secretKey, WY_AES_IV)
+  const params = enc2.toString('base64')
+  const encSecKey = wyRsaEncrypt(Buffer.from(secretKey).reverse(), WY_WEAPI_RSA_PUBLIC).toString('hex')
+  return `params=${encodeURIComponent(params)}&encSecKey=${encodeURIComponent(encSecKey)}`
+}
+
+function wySongItemFromTrack(t) {
+  const artist =
+    Array.isArray(t.ar) && t.ar[0] && t.ar[0].name ? String(t.ar[0].name) : ''
+  return buildSongItem('wy', String(t.id), String(t.name || ''), artist, '')
+}
 
 function requestText(urlString, options = {}, redirectCount = 0) {
   const payload = JSON.stringify({
@@ -189,6 +289,24 @@ function requestJson(urlString, options = {}) {
   return requestText(urlString, options).then(({ statusCode, headers, text }) => ({
     statusCode,
     headers,
+    body: text ? JSON.parse(text) : {}
+  }))
+}
+
+function requestJsonPost(urlString, bodyString, extraHeaders = {}, timeoutMs) {
+  const t = timeoutMs != null ? timeoutMs : HTTP_SEARCH_TIMEOUT_MS
+  return requestText(urlString, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Referer: 'https://music.163.com/',
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      ...extraHeaders
+    },
+    body: bodyString,
+    timeout: t
+  }).then(({ statusCode, text }) => ({
+    statusCode,
     body: text ? JSON.parse(text) : {}
   }))
 }
@@ -615,50 +733,146 @@ async function searchKwPlaylists(keyword, page, pageSize) {
 }
 
 async function loadWyPlaylistDetail(id) {
-  const detailUrl =
-    'https://music.163.com/api/playlist/detail?id=' + encodeURIComponent(String(id)) + '&n=100'
-  const { body } = await requestJson(detailUrl, {
-    headers: {
-      Referer: 'https://music.163.com/',
-      'User-Agent': 'Mozilla/5.0 smart-speaker-music-service'
+  const pid = String(id || '').trim()
+  if (!pid) {
+    return { result: 'empty', kind: 'song', items: [], page: 1, total: 0, total_pages: 0 }
+  }
+  const eparams = wyLinuxapiEparams({
+    method: 'POST',
+    url: 'https://music.163.com/api/v3/playlist/detail',
+    params: { id: pid, n: 100000, s: 8 }
+  })
+  const forwardBody = 'eparams=' + encodeURIComponent(eparams)
+  let body
+  try {
+    const r = await requestJsonPost(
+      'https://music.163.com/api/linux/forward',
+      forwardBody,
+      {},
+      PLAYLIST_UPSTREAM_TIMEOUT_MS
+    )
+    body = r.body
+  } catch (_) {
+    body = null
+  }
+  if (!body || Number(body.code) !== 200 || !body.playlist) {
+    return { result: 'empty', kind: 'song', items: [], page: 1, total: 0, total_pages: 0 }
+  }
+  const pl = body.playlist
+  const trackIds = Array.isArray(pl.trackIds) ? pl.trackIds : []
+  const tracks = Array.isArray(pl.tracks) ? pl.tracks : []
+  const privileges = Array.isArray(pl.privileges) ? pl.privileges : []
+  const trackCount = Number(pl.trackCount || trackIds.length || 0)
+
+  let list = []
+  if (
+    trackIds.length > 0 &&
+    tracks.length === trackIds.length &&
+    privileges.length === trackIds.length
+  ) {
+    list = tracks.map((t) => wySongItemFromTrack(t))
+  } else if (trackIds.length > 0) {
+    const orderedIds = []
+    for (const row of trackIds) {
+      const nid = row && row.id != null ? Number(row.id) : NaN
+      if (Number.isFinite(nid)) {
+        orderedIds.push(nid)
+      }
     }
-  })
-  const tracks = body.result && Array.isArray(body.result.tracks) ? body.result.tracks : []
-  const list = tracks.map((t) => {
-    const artist =
-      Array.isArray(t.artists) && t.artists[0] && t.artists[0].name ? String(t.artists[0].name) : ''
-    return buildSongItem('wy', String(t.id), String(t.name || ''), artist, '')
-  })
+    const batchSize = 320
+    const songMap = new Map()
+    for (let i = 0; i < orderedIds.length; i += batchSize) {
+      if (i > 0) {
+        await new Promise((r) => setTimeout(r, 200))
+      }
+      const chunk = orderedIds.slice(i, i + batchSize)
+      const c = '[' + chunk.map((sid) => `{"id":${sid}}`).join(',') + ']'
+      const form = wyWeapiForm({ c, ids: '[' + chunk.join(',') + ']' })
+      let songs = []
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 350 * attempt))
+        }
+        try {
+          const detail = await requestJsonPost(
+            'https://music.163.com/weapi/v3/song/detail',
+            form,
+            { Origin: 'https://music.163.com' },
+            PLAYLIST_UPSTREAM_TIMEOUT_MS
+          )
+          if (detail.body && Number(detail.body.code) === 200) {
+            songs = Array.isArray(detail.body.songs) ? detail.body.songs : []
+            break
+          }
+        } catch (_) {
+          /* retry */
+        }
+      }
+      for (const t of songs) {
+        if (t && t.id != null) {
+          songMap.set(Number(t.id), t)
+        }
+      }
+    }
+    for (const sid of orderedIds) {
+      const t = songMap.get(sid)
+      if (t) {
+        list.push(wySongItemFromTrack(t))
+      }
+    }
+  }
+
   return {
     result: list.length > 0 ? 'ok' : 'empty',
     kind: 'song',
     items: list,
     page: 1,
-    total: Number((body.result && body.result.trackCount) || list.length),
+    total: trackCount > 0 ? trackCount : list.length,
     total_pages: 1
   }
 }
 
 async function loadKwPlaylistDetail(id) {
-  const detailUrl =
-    'http://nplserver.kuwo.cn/pl.svc' +
-    `?op=getlistinfo&pid=${encodeURIComponent(id)}` +
-    '&pn=0&rn=100&encode=utf8&keyset=pl2012&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1'
-  const { body } = await requestJson(detailUrl, {
-    headers: { 'User-Agent': 'Mozilla/5.0 smart-speaker-music-service' }
-  })
-  const list = Array.isArray(body.musiclist)
-    ? body.musiclist.map((item) =>
-        buildSongItem('kw', item.id, decodeHtml(item.name), decodeHtml(item.artist), '')
-      )
-    : []
+  const rn = 100
+  const all = []
+  let reportedTotal = 0
+  for (let pn = 0; pn < 50; pn++) {
+    const detailUrl =
+      'http://nplserver.kuwo.cn/pl.svc' +
+      `?op=getlistinfo&pid=${encodeURIComponent(id)}` +
+      `&pn=${pn}&rn=${rn}` +
+      '&encode=utf8&keyset=pl2012&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1'
+    const { body } = await requestJson(detailUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 smart-speaker-music-service' }
+    })
+    const chunk = Array.isArray(body.musiclist)
+      ? body.musiclist.map((item) =>
+          buildSongItem('kw', item.id, decodeHtml(item.name), decodeHtml(item.artist), '')
+        )
+      : []
+    if (pn === 0) {
+      reportedTotal = Number(body.total || 0)
+    }
+    if (chunk.length === 0) {
+      break
+    }
+    for (const row of chunk) {
+      all.push(row)
+    }
+    if (chunk.length < rn) {
+      break
+    }
+    if (reportedTotal > 0 && all.length >= reportedTotal) {
+      break
+    }
+  }
   return {
-    result: list.length > 0 ? 'ok' : 'empty',
+    result: all.length > 0 ? 'ok' : 'empty',
     kind: 'song',
-    items: list,
+    items: all,
     page: 1,
-    total: Number(body.total || list.length),
-    total_pages: Number(body.total || 0) > 0 ? 1 : list.length > 0 ? 1 : 0
+    total: reportedTotal > 0 ? reportedTotal : all.length,
+    total_pages: 1
   }
 }
 
@@ -1067,12 +1281,15 @@ function createServer() {
       if (pathname === '/music/playlist/detail') {
         const playlistId = String(body.id || '').trim()
         const source = String(body.source || 'kw').trim().toLowerCase()
+        const page = safeNumber(body.page, 1)
+        const pageSize = safeNumber(body.page_size, DEFAULT_MUSIC_PAGE_SIZE)
         const loadPlaylistDetail = {
           wy: loadWyPlaylistDetail,
           kw: loadKwPlaylistDetail
         }
         const loader = loadPlaylistDetail[source] || loadKwPlaylistDetail
-        const result = await loader(playlistId)
+        const full = await getPlaylistDetailFullCached(source, playlistId, loader)
+        const result = paginateDetailItems(full, page, pageSize)
         logListPreview('playlist.detail', playlistId, result.result, result.items)
         return json(res, 200, result)
       }
@@ -1125,9 +1342,17 @@ function createServer() {
         if (!boardId) {
           result = { result: 'empty', kind: 'song', items: [], page, total: 0, total_pages: 0 }
         } else if (source === 'wy') {
-          result = paginateDetailItems(await loadWyPlaylistDetail(boardId), page, pageSize)
+          result = paginateDetailItems(
+            await getPlaylistDetailFullCached('wy', boardId, loadWyPlaylistDetail),
+            page,
+            pageSize
+          )
         } else if (source === 'kw') {
-          result = paginateDetailItems(await loadKwPlaylistDetail(boardId), page, pageSize)
+          result = paginateDetailItems(
+            await getPlaylistDetailFullCached('kw', boardId, loadKwPlaylistDetail),
+            page,
+            pageSize
+          )
         } else {
           result = { result: 'empty', kind: 'song', items: [], page, total: 0, total_pages: 0 }
         }

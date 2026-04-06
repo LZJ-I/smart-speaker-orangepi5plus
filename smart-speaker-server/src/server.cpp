@@ -854,15 +854,15 @@ void Server::read_cb(struct bufferevent *bev, void *ctx)
                cmd == "app_continue_play" || cmd == "app_play_next_song" || cmd == "app_play_prev_song" ||
                cmd == "app_add_volume" || cmd == "app_sub_volume" || cmd == "app_order_mode" ||
                cmd == "app_single_mode" || cmd == "app_random_mode" || cmd == "app_get_music_list" ||
-               cmd == "app_play_assign_song" || cmd == "app_play_playlist" || cmd == "app_playlist_next_page" ||
-               cmd == "app_playlist_prev_page") {
+               cmd == "app_play_assign_song" || cmd == "app_play_playlist" || cmd == "app_insert_play_song" ||
+               cmd == "app_playlist_next_page" || cmd == "app_playlist_prev_page") {
         s->server_app_option(bev, root);
     } else if (cmd == "reply_app_start_play" || cmd == "reply_app_stop_play" || cmd == "reply_app_suspend_play" ||
                cmd == "reply_app_continue_play" || cmd == "reply_app_play_next_song" ||
                cmd == "reply_app_play_prev_song" || cmd == "reply_app_add_volume" || cmd == "reply_app_sub_volume" ||
                cmd == "reply_app_order_mode" || cmd == "reply_app_single_mode" || cmd == "reply_app_random_mode" ||
-               cmd == "reply_app_play_assign_song" || cmd == "reply_app_play_playlist" || cmd == "reply_app_playlist_next_page" ||
-               cmd == "reply_app_playlist_prev_page") {
+               cmd == "reply_app_play_assign_song" || cmd == "reply_app_play_playlist" || cmd == "reply_app_insert_play_song" ||
+               cmd == "reply_app_playlist_next_page" || cmd == "reply_app_playlist_prev_page") {
         s->server_device_reply_handle(bev, root);
     } else {
         s->debug("未知命令：%s", cmd.c_str());
