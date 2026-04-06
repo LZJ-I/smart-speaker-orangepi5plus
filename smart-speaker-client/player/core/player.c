@@ -478,6 +478,7 @@ static void player_play_music(const Music_Node *song)
     pid_t pid;
     Shm_Data s;
     if (song == NULL) return;
+    force_stop_playback_processes();
     pid = fork();
     if (pid < 0) {
         LOGE(TAG, "创建子进程失败");
@@ -536,10 +537,11 @@ void player_stop_play(void)
     g_eof_autostart_suppressed = 1;
     shm_get(&s);
     cpid = s.child_pid;
-    stop_active_grandchild(1);
+    /* 须先于杀孙进程：否则子进程在 wait 到孙退出后仍会 fork 下一代孙进程，再收 SIGUSR1 为时已晚 */
     if (pid_is_alive(cpid)) {
         kill(cpid, SIGUSR1);
     }
+    stop_active_grandchild(1);
     if (pid_is_alive(cpid)) {
         if (!wait_pid_exit(cpid, 500, NULL)) {
             kill(cpid, SIGTERM);
@@ -548,6 +550,11 @@ void player_stop_play(void)
                 wait_pid_exit(cpid, 500, NULL);
             }
         }
+    }
+    shm_get(&s);
+    if (pid_is_alive(s.grand_pid)) {
+        (void)kill(s.grand_pid, SIGCONT);
+        (void)kill(s.grand_pid, SIGKILL);
     }
     g_current_state = PLAY_STATE_STOP;
     g_current_suspend = PLAY_SUSPEND_YES;
@@ -1014,7 +1021,7 @@ int player_next_song()
         g_current_state = PLAY_STATE_PLAY;
         g_current_suspend = PLAY_SUSPEND_NO;
         player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
-        stop_active_grandchild(0);
+        stop_active_grandchild(1);
         return 0;
     }
     player_start_play();
@@ -1047,7 +1054,7 @@ int player_prev_song()
         g_current_state = PLAY_STATE_PLAY;
         g_current_suspend = PLAY_SUSPEND_NO;
         player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
-        stop_active_grandchild(0);
+        stop_active_grandchild(1);
         return 0;
     }
     player_start_play();
@@ -1105,7 +1112,7 @@ static int player_switch_to_picked_song(const Music_Node *picked)
         g_current_state = PLAY_STATE_PLAY;
         g_current_suspend = PLAY_SUSPEND_NO;
         player_set_audio_focus(AUDIO_FOCUS_MUSIC_PLAYING);
-        stop_active_grandchild(0);
+        stop_active_grandchild(1);
         return 0;
     }
     player_start_play();

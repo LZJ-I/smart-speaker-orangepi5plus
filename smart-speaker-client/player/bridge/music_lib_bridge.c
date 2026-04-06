@@ -289,6 +289,7 @@ int music_lib_search_play_first(const char *keyword)
     int count = 0;
     if (keyword == NULL || keyword[0] == '\0') return -1;
     if (music_lib_search_fill_list_page(keyword, 1, PLAYER_ONLINE_PLAYLIST_PAGE_SIZE, &total_pages, &count) != 0 || count <= 0) return -1;
+    player_stop_play();
     player_start_play();
     return 0;
 }
