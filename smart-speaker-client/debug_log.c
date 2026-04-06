@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 static FILE *g_app_log_fp;
 static pthread_mutex_t g_app_log_mutex = PTHREAD_MUTEX_INITIALIZER;
