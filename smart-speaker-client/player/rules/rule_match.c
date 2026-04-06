@@ -124,43 +124,84 @@ static int match_prev(const char *text)
 
 static int match_vol_down(const char *text)
 {
-    static const char *const k1[] = {"减", "降低", NULL};
+    static const char *const k1[] = {"减", "降低", "调低", "放低", NULL};
     static const char *const k2[] = {"音量", "声音", NULL};
-    static const char *const k3[] = {"太大", "有点大", "小点", "小一点", "调小", NULL};
+    static const char *const k3[] = {
+        "太大", "有点大", "小点", "小一点", "轻一点", "再小点", "再轻点", "调小", "轻点", NULL
+    };
     return (has_any(text, k1) && has_any(text, k2)) || (has_any(text, k2) && has_any(text, k3));
 }
 
 static int match_vol_up(const char *text)
 {
-    static const char *const k1[] = {"增大", "增加", "提高", NULL};
+    static const char *const k1[] = {"增大", "增加", "提高", "调高", "放大", NULL};
     static const char *const k2[] = {"音量", "声音", NULL};
-    static const char *const k3[] = {"太小", "有点小", "大点", "大一点", "调大", NULL};
+    static const char *const k3[] = {
+        "太小", "有点小", "大点", "大一点", "响一点", "再大点", "再响点", "调大", "响点", NULL
+    };
     return (has_any(text, k1) && has_any(text, k2)) || (has_any(text, k2) && has_any(text, k3));
 }
 
-static int match_vol_set_percent(const char *text, int *out_pct)
+static void skip_ws_vol_sep(const char **pp)
 {
-    const char *p = NULL;
-    char *end = NULL;
-    long v;
-    const char *ba = strstr(text, "把音量设置到");
-    const char *she = strstr(text, "设置音量到");
-    if (ba != NULL && (she == NULL || ba <= she)) {
-        p = ba + strlen("把音量设置到");
-    } else if (she != NULL) {
-        p = she + strlen("设置音量到");
-    } else {
-        return 0;
+    for (;;) {
+        const unsigned char *s = (const unsigned char *)*pp;
+        if (*s == '\0') {
+            return;
+        }
+        if (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') {
+            ++(*pp);
+            continue;
+        }
+        if (*s == ',' || *s == '.' || *s == ':' || *s == ';') {
+            ++(*pp);
+            continue;
+        }
+        if (s[0] == 0xef && s[1] == 0xbc && (s[2] == 0x9a || s[2] == 0x8c)) {
+            *pp += 3;
+            continue;
+        }
+        if (s[0] == 0xe3 && s[1] == 0x80 && s[2] == 0x82) {
+            *pp += 3;
+            continue;
+        }
+        break;
     }
-    while (*p == ' ' || *p == '\t') {
-        ++p;
+}
+
+static int parse_volume_pct_number(const char *p, const char **end_out)
+{
+    static const char baifen[] = "\xe7\x99\xbe\xe5\x88\x86\xe4\xb9\x8b";
+    long v = 0;
+    int n = 0;
+
+    skip_ws_vol_sep(&p);
+    if (strncmp(p, baifen, sizeof(baifen) - 1) == 0) {
+        p += sizeof(baifen) - 1;
+        skip_ws_vol_sep(&p);
     }
-    if (*p == '\0' || !isdigit((unsigned char)*p)) {
-        return 0;
+    while (1) {
+        unsigned char c = (unsigned char)*p;
+        if (c >= '0' && c <= '9') {
+            v = v * 10 + (long)(c - '0');
+            ++n;
+            ++p;
+            if (v > 1000) {
+                break;
+            }
+            continue;
+        }
+        if ((unsigned char)p[0] == 0xef && (unsigned char)p[1] == 0xbc &&
+            (unsigned char)p[2] >= 0x90 && (unsigned char)p[2] <= 0x99) {
+            v = v * 10 + (long)(((unsigned char)p[2]) - 0x90);
+            n++;
+            p += 3;
+            continue;
+        }
+        break;
     }
-    v = strtol(p, &end, 10);
-    if (end == p) {
-        return 0;
+    if (n == 0) {
+        return -1;
     }
     if (v < 0) {
         v = 0;
@@ -168,7 +209,230 @@ static int match_vol_set_percent(const char *text, int *out_pct)
     if (v > 100) {
         v = 100;
     }
-    *out_pct = (int)v;
+    skip_ws_vol_sep(&p);
+    if (*p == '%') {
+        ++p;
+    } else if ((unsigned char)p[0] == 0xef && (unsigned char)p[1] == 0xbc && (unsigned char)p[2] == 0x85) {
+        p += 3;
+    }
+    if (end_out != NULL) {
+        *end_out = p;
+    }
+    return (int)v;
+}
+
+static const char *skip_ascii_ws_only(const char *p)
+{
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+        ++p;
+    }
+    return p;
+}
+
+/* 到 / 成 / 为（「音量设置为」） */
+static const char *after_dao_cheng_wei(const char *p)
+{
+    static const char dao[] = "\xe5\x88\xb0";
+    static const char cheng[] = "\xe6\x88\x90";
+    static const char wei[] = "\xe4\xb8\xba";
+    p = skip_ascii_ws_only(p);
+    if (strncmp(p, dao, 3) == 0) {
+        return p + 3;
+    }
+    if (strncmp(p, cheng, 3) == 0) {
+        return p + 3;
+    }
+    if (strncmp(p, wei, 3) == 0) {
+        return p + 3;
+    }
+    return NULL;
+}
+
+static void vol_set_try_suffix(const char *suff, const char **best_suff)
+{
+    if (suff == NULL) {
+        return;
+    }
+    if (parse_volume_pct_number(suff, NULL) < 0) {
+        return;
+    }
+    if (*best_suff == NULL || suff < *best_suff) {
+        *best_suff = suff;
+    }
+}
+
+static void copy_strip_ascii_spaces(const char *text, char *out, size_t out_sz)
+{
+    size_t o = 0;
+    const char *s = text;
+    if (text == NULL || out_sz == 0) {
+        return;
+    }
+    while (*s != '\0' && o + 1 < out_sz) {
+        if (*s == ' ') {
+            ++s;
+            continue;
+        }
+        out[o++] = *s++;
+    }
+    out[o] = '\0';
+}
+
+static const char *vol_set_value_start_in(const char *text)
+{
+    static const char *const pfx[] = {
+        "帮我把音量设置到",
+        "帮我把音量调到",
+        "帮我把音量设置成",
+        "帮我把音量调整成",
+        "帮我把音量调整到",
+        "把音量给我设置到",
+        "把音量给我调到",
+        "把音量给我设置成",
+        "把音量给我调整成",
+        "把音量给我调整到",
+        "帮我把声音设置到",
+        "帮我把声音调到",
+        "帮我把声音设置成",
+        "帮我把声音调整成",
+        "帮我把声音调整到",
+        "把音量设置到",
+        "把声音设置到",
+        "把音量设置成",
+        "把声音设置成",
+        "把音量调整到",
+        "把声音调整到",
+        "把音量调整成",
+        "把声音调整成",
+        "把音量调到",
+        "把声音调到",
+        "把音量开到",
+        "把声音开到",
+        "将音量设置到",
+        "将音量调到",
+        "将音量设置成",
+        "将音量调整到",
+        "将音量调整成",
+        "将声音设置到",
+        "将声音调到",
+        "将声音设置成",
+        "将声音调整到",
+        "将声音调整成",
+        "帮我把音量调至",
+        "帮我把声音调至",
+        "把音量调至",
+        "把声音调至",
+        "将音量调至",
+        "将声音调至",
+        "音量调至",
+        "声音调至",
+        "帮我把音量改为",
+        "帮我把声音改为",
+        "把音量改为",
+        "把声音改为",
+        "将音量改为",
+        "将声音改为",
+        "音量改为",
+        "声音改为",
+        "设置音量到",
+        "设置声音到",
+        "设置音量成",
+        "设置声音成",
+        "调节音量到",
+        "调节声音到",
+        "调整音量到",
+        "调整声音到",
+        "调整音量成",
+        "调整声音成",
+        "调音量到",
+        "调声音到",
+        "音量给我调到",
+        "音量给我设置到",
+        "音量给我设置成",
+        "音量给我调整到",
+        "声音给我调到",
+        "声音给我设置到",
+        "声音给我设置成",
+        "声音给我调整到",
+        "声音给我调整成",
+        "音量设置到",
+        "声音设置到",
+        "音量设置成",
+        "声音设置成",
+        "音量调整到",
+        "声音调整到",
+        "音量调整成",
+        "声音调整成",
+        "音量调到",
+        "声音调到",
+        "音量开到",
+        "声音开到",
+        "音量调节到",
+        "声音调节到",
+        "音量设为",
+        "声音设为",
+        "音量设成",
+        "声音设成",
+        "音量调成",
+        "声音调成",
+        NULL
+    };
+    static const char *const flex_kw[] = {
+        "音量设置",
+        "声音设置",
+        "音量调整",
+        "声音调整",
+        NULL
+    };
+    const char *best_suff = NULL;
+    int i;
+    const char *q;
+
+    for (i = 0; pfx[i] != NULL; ++i) {
+        q = text;
+        while ((q = strstr(q, pfx[i])) != NULL) {
+            vol_set_try_suffix(q + strlen(pfx[i]), &best_suff);
+            ++q;
+        }
+    }
+    for (i = 0; flex_kw[i] != NULL; ++i) {
+        size_t L = strlen(flex_kw[i]);
+        q = text;
+        while ((q = strstr(q, flex_kw[i])) != NULL) {
+            const char *s = after_dao_cheng_wei(q + L);
+            if (s != NULL) {
+                vol_set_try_suffix(s, &best_suff);
+            }
+            ++q;
+        }
+    }
+    return best_suff;
+}
+
+static int match_vol_set_percent(const char *text, int *out_pct)
+{
+    char compact[384];
+    const char *p;
+    int v;
+
+    if (text == NULL || text[0] == '\0') {
+        return 0;
+    }
+    p = vol_set_value_start_in(text);
+    if (p == NULL) {
+        copy_strip_ascii_spaces(text, compact, sizeof(compact));
+        if (compact[0] != '\0') {
+            p = vol_set_value_start_in(compact);
+        }
+    }
+    if (p == NULL) {
+        return 0;
+    }
+    v = parse_volume_pct_number(p, NULL);
+    if (v < 0) {
+        return 0;
+    }
+    *out_pct = v;
     return 1;
 }
 
