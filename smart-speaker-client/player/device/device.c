@@ -2,6 +2,7 @@
 #include "debug_log.h"
 #include <math.h>
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -26,14 +27,18 @@ unsigned long old, new;     // 用于判断长按和短按
 struct itimerval tv;        // 按键定时器结构体
 int g_current_vol = 0;      // 当前音量
 
-static int percent_to_playback_volume(snd_mixer_elem_t *elem, int volume, long *target_vol)
+/* 设置与读回共用同一套 UI%→ALSA 步进，读回用枚举反推，避免 dB/线性混用导致偏差或响度异常 */
+static int ui_percent_to_alsa_step(snd_mixer_elem_t *elem, int volume, long *target_vol)
 {
     long vol_min = 0;
     long vol_max = 0;
     long db_min = 0;
     long db_max = 0;
+    long range;
 
-    if (elem == NULL || target_vol == NULL) return -1;
+    if (elem == NULL || target_vol == NULL) {
+        return -1;
+    }
     if (snd_mixer_selem_get_playback_volume_range(elem, &vol_min, &vol_max) < 0) {
         LOGE(TAG, "snd_mixer_selem_get_playback_volume_range error");
         return -1;
@@ -54,26 +59,46 @@ static int percent_to_playback_volume(snd_mixer_elem_t *elem, int volume, long *
         double ratio = volume / 100.0;
         double target_db = db_max + DB_PERCENT_SCALE * log10(ratio);
         long target_db_long;
-        if (target_db < db_min) target_db = db_min;
-        if (target_db > db_max) target_db = db_max;
+        if (target_db < db_min) {
+            target_db = db_min;
+        }
+        if (target_db > db_max) {
+            target_db = db_max;
+        }
         target_db_long = (long)llround(target_db);
         if (snd_mixer_selem_ask_playback_dB_vol(elem, target_db_long, 0, target_vol) >= 0) {
+            if (*target_vol < vol_min) {
+                *target_vol = vol_min;
+            }
+            if (*target_vol > vol_max) {
+                *target_vol = vol_max;
+            }
             return 0;
         }
     }
-    *target_vol = (long)llround(vol_min + (vol_max - vol_min) * (volume / 100.0));
+    range = vol_max - vol_min;
+    *target_vol = vol_min + (long)llround((double)volume * (double)range / 100.0);
+    if (*target_vol < vol_min) {
+        *target_vol = vol_min;
+    }
+    if (*target_vol > vol_max) {
+        *target_vol = vol_max;
+    }
     return 0;
 }
 
-static int playback_volume_to_percent(snd_mixer_elem_t *elem, long current_alsa, int *volume)
+static int alsa_step_to_ui_percent(snd_mixer_elem_t *elem, long current_alsa, int *volume, int prefer_pct)
 {
     long vol_min = 0;
     long vol_max = 0;
-    long current_db = 0;
-    long db_min = 0;
-    long db_max = 0;
+    int p;
+    long best_err = LONG_MAX;
+    int best_p = prefer_pct;
+    long t;
 
-    if (elem == NULL || volume == NULL) return -1;
+    if (elem == NULL || volume == NULL) {
+        return -1;
+    }
     if (snd_mixer_selem_get_playback_volume_range(elem, &vol_min, &vol_max) < 0) {
         return -1;
     }
@@ -89,19 +114,23 @@ static int playback_volume_to_percent(snd_mixer_elem_t *elem, long current_alsa,
         *volume = 100;
         return 0;
     }
-    if (snd_mixer_selem_get_playback_dB_range(elem, &db_min, &db_max) >= 0 &&
-        db_max > db_min &&
-        snd_mixer_selem_ask_playback_vol_dB(elem, current_alsa, &current_db) >= 0) {
-        double ratio = pow(10.0, (current_db - db_max) / DB_PERCENT_SCALE);
-        int mapped = (int)llround(ratio * 100.0);
-        if (mapped < 0) mapped = 0;
-        if (mapped > 100) mapped = 100;
-        *volume = mapped;
-        return 0;
+    if (prefer_pct < 0) {
+        prefer_pct = 0;
     }
-    *volume = (int)llround((current_alsa - vol_min) * 100.0 / (double)(vol_max - vol_min));
-    if (*volume < 0) *volume = 0;
-    if (*volume > 100) *volume = 100;
+    if (prefer_pct > 100) {
+        prefer_pct = 100;
+    }
+    for (p = 0; p <= 100; p++) {
+        if (ui_percent_to_alsa_step(elem, p, &t) != 0) {
+            return -1;
+        }
+        long err = labs(t - current_alsa);
+        if (err < best_err || (err == best_err && labs((long)p - (long)prefer_pct) < labs((long)best_p - (long)prefer_pct))) {
+            best_err = err;
+            best_p = p;
+        }
+    }
+    *volume = best_p;
     return 0;
 }
 
@@ -182,7 +211,7 @@ int device_set_volume(int volume)
         LOGE(TAG, "device_set_volume error: 获取混音器元素失败");
         return -1;
     }
-    if (percent_to_playback_volume(elem, volume, &target_vol) != 0) {
+    if (ui_percent_to_alsa_step(elem, volume, &target_vol) != 0) {
         snd_mixer_close(mixer);
         return -1;
     }
@@ -210,7 +239,7 @@ int device_get_volume(int *volume)
         snd_mixer_close(mixer);
         return -1;
     }
-    if (playback_volume_to_percent(elem, current_alsa, volume) != 0) {
+    if (alsa_step_to_ui_percent(elem, current_alsa, volume, g_current_vol) != 0) {
         snd_mixer_close(mixer);
         return -1;
     }
@@ -234,8 +263,9 @@ int device_adjust_volume(int adjust_type)
         return -1;
     }
     int current_vol = 0;
-    if (device_get_volume(&current_vol) != 0)
+    if (device_get_volume(&current_vol) != 0) {
         return -1;
+    }
     int new_vol = (adjust_type == 1) ? (current_vol + 10) : (current_vol - 10);
     new_vol = (new_vol < 0) ? 0 : (new_vol > 100) ? 100 : new_vol;
     if (new_vol == current_vol) {

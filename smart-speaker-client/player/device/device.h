@@ -12,7 +12,6 @@
 // 舍弃此方法，改用动态查找 gpio-keys 设备节点
 // #define USER_BUTTON_DEV "/dev/input/event2"	// 用户按键设备节点
 
-#include "device.h"
 #include <math.h>
 #include <assert.h>
 
