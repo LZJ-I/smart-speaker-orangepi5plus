@@ -14,16 +14,20 @@
 #define TAG "ASR"
 
 char g_current_asr_text_buffer[1024] = {0};
+#ifdef KWS_TEST_MODE
+char g_last_asr_text[1024] = {0};
+struct timespec g_last_asr_update_time = {0, 0};
+int g_asr_result_updated = 0;
+#define MODEL_PREFIX "../../../3rdparty"
+#else
 extern char g_last_asr_text[1024];
 extern struct timespec g_last_asr_update_time;
 extern int g_asr_result_updated;
-
-#ifdef KWS_TEST_MODE
-#define MODEL_PREFIX "../../../3rdparty"
-#elif defined(PROCESS_MODE)
+#if defined(PROCESS_MODE)
 #define MODEL_PREFIX "./3rdparty"
 #else
 #define MODEL_PREFIX "../3rdparty"
+#endif
 #endif
 
 const SherpaOnnxVoiceActivityDetector *g_vad = NULL;

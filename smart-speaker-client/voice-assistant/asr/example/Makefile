@@ -8,7 +8,8 @@ SRCS = main.c \
 OBJS = $(SRCS:.c=.o)
 
 CFLAGS = -Wall -g -DKWS_TEST_MODE -I../../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-jni/include/ -I../../common -I.. -I. -I../../..
-LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L../../../3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib -lsamplerate -pthread
+SHRP_LIB_REL = 3rdparty/sherpa-onnx/sherpa-onnx-v1.12.25-linux-aarch64-shared-cpu/lib
+LIBS = -lasound -lonnxruntime -lsherpa-onnx-c-api -L../../../$(SHRP_LIB_REL) -Wl,-rpath,'$$ORIGIN/../../../$(SHRP_LIB_REL)' -lsamplerate -pthread
 
 $(TARGET): $(OBJS)
 	$(CC) -o $(TARGET) $(OBJS) $(LIBS)
