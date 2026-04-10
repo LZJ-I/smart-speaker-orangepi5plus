@@ -20,5 +20,5 @@ player/run
 # 进程运行时日志（app_log_init）
 data/
 
-# 预合成 TTS 等二进制资源（Fork 请本地执行 tools/gen_mode_tts_wav.sh 生成）
+# 预合成 TTS 等二进制资源（请本地执行 tools/gen_mode_tts_wav.sh 生成）
 assets/
